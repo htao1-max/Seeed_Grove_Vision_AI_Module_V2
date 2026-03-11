@@ -366,7 +366,7 @@ static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id)
     }
 }
 
-void setTimer0AlarmPMU() {
+__attribute__((weak)) void setTimer0AlarmPMU() {
 //
 	TIMER_ID_E id;
 	TIMER_ERROR_E ret;
@@ -383,7 +383,7 @@ void setTimer0AlarmPMU() {
 
 }
 
-void setPS_PDNoVid()
+__attribute__((weak)) void setPS_PDNoVid()
 {
 	PM_PD_NOVIDPRE_CFG_T cfg;
 	uint32_t freq;
