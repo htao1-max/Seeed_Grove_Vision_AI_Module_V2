@@ -46,7 +46,9 @@ static void i2c_customer_handler(void)
 
         if (payload_len >= 1) {
             uint8_t raw = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
-            g_detect_threshold = (float)raw / 100.0f;
+            if (raw <= 100) {
+                g_detect_threshold = (float)raw / 100.0f;
+            }
         }
 
         g_recording_active = 1;

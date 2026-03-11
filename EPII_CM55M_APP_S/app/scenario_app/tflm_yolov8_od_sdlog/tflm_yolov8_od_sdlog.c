@@ -81,8 +81,8 @@
 #define GROVE_VISION_AI_II
 
 /* Frame / detection counters for SD logging */
-static uint32_t g_frame_count  = 0;
-static uint32_t g_detect_count = 0;
+static volatile uint32_t g_frame_count  = 0;
+static volatile uint32_t g_detect_count = 0;
 
 static uint8_t  g_xdma_abnormal, g_md_detect, g_cdm_fifoerror, g_wdt1_timeout, g_wdt2_timeout, g_wdt3_timeout;
 static uint8_t  g_hxautoi2c_error, g_inp1bitparer_abnormal;
