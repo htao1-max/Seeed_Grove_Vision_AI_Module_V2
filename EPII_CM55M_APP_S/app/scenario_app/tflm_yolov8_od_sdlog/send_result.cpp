@@ -1,7 +1,7 @@
 extern "C" {
 #include <hx_drv_uart.h>
 #include "hx_drv_swreg_aon.h"
-#include "tflm_yolov8_od.h"
+#include "tflm_yolov8_od_sdlog.h"
 }
 #include <math.h>
 
