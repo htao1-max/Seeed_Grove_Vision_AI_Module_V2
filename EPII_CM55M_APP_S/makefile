@@ -154,7 +154,7 @@ CUSTOMER ?= seeed
 # tflm_yolov8_gender_cls
 # tflm_mb_cls
 ##
-APP_TYPE = allon_sensor_tflm
+APP_TYPE = tflm_yolov8_od_sdlog
  
 ### Options above must be added before include options.mk ###
 override EPII_ROOT := $(strip $(subst \,/,$(EPII_ROOT)))

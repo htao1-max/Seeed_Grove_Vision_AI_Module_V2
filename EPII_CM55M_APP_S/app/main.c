@@ -140,7 +140,17 @@ int main(void)
 #endif
 
 
-#ifdef TFLM_YOLOV8_OD
+#ifdef TFLM_YOLOV8_OD_SDLOG
+#include "tflm_yolov8_od_sdlog.h"
+
+/** main entry */
+int main(void)
+{
+	board_init();
+	tflm_yolov8_od_sdlog_app();
+	return 0;
+}
+#elif defined(TFLM_YOLOV8_OD)
 #include "tflm_yolov8_od.h"
 
 /** main entry */
