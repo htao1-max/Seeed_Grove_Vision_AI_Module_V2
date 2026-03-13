@@ -130,15 +130,32 @@ def xmodem_send_bin():
         return False
 
     print("Please press reset button!!")
+    print("[DEBUG] Entering reset-detect loop...")
+    print("[DEBUG] Serial port: %s, baudrate: %s, timeout: %s" % (ser.port, ser.baudrate, ser.timeout))
+    print("[DEBUG] Waiting for device response (will read lines from serial)...")
 
+    loop_count = 0
     while(True):
+        loop_count += 1
+        print("[DEBUG] Loop iteration #%d - calling ser.readline()..." % loop_count)
         response = ser.readline().strip()
-        print(str(response))
+        print("[DEBUG] Got %d bytes: %s" % (len(response), repr(response)))
+        print("[DEBUG] As string: '%s'" % str(response))
+
+        if len(response) == 0:
+            print("[DEBUG] Empty response (timeout after %s seconds). Is the device connected and reset button pressed?" % ser.timeout)
+
+        print("[DEBUG] Sending AT command '1'...")
         send_at_command('1')
+        print("[DEBUG] AT command sent.")
 
         if (str(response).count('Send data using the xmodem protocol from your terminal') > 0) :
+            print("[DEBUG] >>> Match found! Breaking out of loop.")
             break
+        else:
+            print("[DEBUG] No match for expected string yet. Continuing...")
 
+    print("[DEBUG] Exited reset-detect loop after %d iterations." % loop_count)
     time.sleep(1)
     ser.flushInput()
     send_at_command('1')

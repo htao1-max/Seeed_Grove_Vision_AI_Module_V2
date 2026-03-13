@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/frank/STM32CubeIDE/workspace_1.19.0/stm32ide/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S -name \"*.c\" -o -name \"*.h\" | xargs grep -l \"GPIO.*reset\\\\|reset.*button\\\\|BUTTON\" | head -20)",
+      "Bash(find /c/Users/frank/STM32CubeIDE/workspace_1.19.0/stm32ide/Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/app/scenario_app/tflm_yolov8_od_sdlog -name \"*.c\" -o -name \"*.h\" | xargs basename -a)"
+    ]
+  }
+}
