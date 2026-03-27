@@ -77,7 +77,11 @@ void sdlog_session_init(void)
         xprintf("[SDLOG] f_mount failed: %d — SD logging disabled\r\n", res);
         return;
     }
-    xprintf("[SDLOG] SD card mounted\r\n");
+    xprintf("\r\n****************************************************\r\n");
+    xprintf("****************************************************\r\n");
+    xprintf("***       [SDLOG] SD card mounted                ***\r\n");
+    xprintf("****************************************************\r\n");
+    xprintf("****************************************************\r\n");
 
     /* Find the next available SESSION_XXXX directory */
     while (1) {
@@ -123,7 +127,11 @@ void sdlog_session_init(void)
 
     g_sdlog_ready = 1;
     sdlog_write("[BOOT] Session %s started\r\n", g_session_dir);
-    xprintf("[SDLOG] Session %s initialised\r\n", g_session_dir);
+    xprintf("\r\n****************************************************\r\n");
+    xprintf("****************************************************\r\n");
+    xprintf("***       [SDLOG] Session %s initialised    ***\r\n", g_session_dir);
+    xprintf("****************************************************\r\n");
+    xprintf("****************************************************\r\n");
 }
 
 /* -----------------------------------------------------------------------

@@ -52,7 +52,11 @@ static void i2c_customer_handler(void)
         }
 
         g_recording_active = 1;
-        xprintf("[I2C_CMD] Recording started (threshold=%.2f)\r\n", g_detect_threshold);
+        xprintf("\r\n****************************************************\r\n");
+        xprintf("****************************************************\r\n");
+        xprintf("***  [I2C_CMD] Recording started (thresh=%.2f)  ***\r\n", g_detect_threshold);
+        xprintf("****************************************************\r\n");
+        xprintf("****************************************************\r\n");
         sdlog_write("[I2C] Recording started (threshold=%.2f)\r\n", g_detect_threshold);
     } else {
         xprintf("[I2C_CMD] Unknown customer cmd: feature=0x%02x cmd=0x%02x\r\n", feature, cmd);
@@ -75,5 +79,9 @@ static void i2c_customer_handler(void)
 void i2c_cmd_init(void)
 {
     i2ccomm_cmd_customer_register_cb(USE_DW_IIC_SLV_0, i2c_customer_handler);
-    xprintf("[I2C_CMD] Customer I2C handler registered (addr=0x62, feature=0x80)\r\n");
+    xprintf("\r\n****************************************************\r\n");
+    xprintf("****************************************************\r\n");
+    xprintf("***  [I2C_CMD] Handler registered (addr=0x28)   ***\r\n");
+    xprintf("****************************************************\r\n");
+    xprintf("****************************************************\r\n");
 }
