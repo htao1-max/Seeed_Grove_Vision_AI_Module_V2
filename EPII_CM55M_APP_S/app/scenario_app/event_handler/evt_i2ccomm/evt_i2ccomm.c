@@ -54,7 +54,7 @@
 #define DATA_SFT_OFFSET_16          16
 #define DATA_SFT_OFFSET_24          24
 
-#define EVT_I2CS_0_SLV_ADDR         0x28
+#define EVT_I2CS_0_SLV_ADDR         0x28////***********from 0x62 */
 #define EVT_I2CS_1_SLV_ADDR         0x64
 
 /***************************************************
