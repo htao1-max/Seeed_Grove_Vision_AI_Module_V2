@@ -44,11 +44,19 @@ static void sdlog_write_image(uint32_t addr, uint32_t sz, const char *path)
     FRESULT res;
     UINT bw;
 
-    res = f_open(&fil, path, FA_CREATE_NEW | FA_WRITE);
+    if (sz == 0 || addr == 0) {
+        xprintf("[SDLOG] skip %s (addr=0x%x sz=%u)\r\n", path, addr, sz);
+        return;
+    }
+
+    SCB_CleanInvalidateDCache_by_Addr((void *)addr, sz);
+
+    res = f_open(&fil, path, FA_CREATE_ALWAYS | FA_WRITE);
     if (res == FR_OK) {
-        SCB_InvalidateDCache_by_Addr((void *)addr, sz);
         res = f_write(&fil, (void *)addr, sz, &bw);
-        if (res) { xprintf("[SDLOG] f_write(%s) res=%d\r\n", path, res); }
+        if (res != FR_OK) {
+            xprintf("[SDLOG] f_write(%s) res=%d bw=%u\r\n", path, res, bw);
+        }
         f_close(&fil);
     } else {
         xprintf("[SDLOG] f_open(%s) res=%d\r\n", path, res);

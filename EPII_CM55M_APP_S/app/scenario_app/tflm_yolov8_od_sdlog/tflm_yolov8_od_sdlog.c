@@ -477,6 +477,10 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
         if (g_recording_active) {
             char fname[48];
 
+            if (g_frame_count == 0) {
+                xprintf("[SDLOG] First frame: jpeg_addr=0x%x jpeg_sz=%u\r\n", jpeg_addr, jpeg_sz);
+            }
+
             /* 1. Always save to ALL/ */
             xsprintf(fname, "img_%04lu.jpg", g_frame_count);
             sdlog_save_all(jpeg_addr, jpeg_sz, fname);
@@ -634,10 +638,7 @@ int tflm_yolov8_od_sdlog_app(void) {
     mm_set_initial((int)(&mm_start_addr), 0x00200000-((int)(&mm_start_addr)-0x34000000));
 #endif
 
-    /* ---- Step 2: mount SD and create session folder ---- */
-    sdlog_session_init();
-
-    /* ---- Step 3: arm I2C slave for start-recording command ---- */
+    /* ---- Step 2: arm I2C slave callback (before events start) ---- */
     i2c_cmd_init();
 
     if(g_use_case == 0) {
@@ -647,6 +648,9 @@ int tflm_yolov8_od_sdlog_app(void) {
 #endif
         app_start_state(APP_STATE_ALLON_YOLOV8N_OB);
     }
+
+    /* ---- Step 3: mount SD AFTER sensor/datapath init so pin mux is stable ---- */
+    sdlog_session_init();
 
     return 0;
 }
