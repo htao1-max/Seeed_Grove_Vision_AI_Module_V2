@@ -649,6 +649,13 @@ int tflm_yolov8_od_sdlog_app(void) {
         app_start_state(APP_STATE_ALLON_YOLOV8N_OB);
     }
 
+    /* ---- Connectivity banner ---- */
+    xprintf("\r\n****************************************************\r\n");
+    xprintf("***  I2C slave 0 listening on 0x62 (7-bit)       ***\r\n");
+    xprintf("***  I2C slave 1 listening on 0x64 (7-bit)       ***\r\n");
+    xprintf("***  Waiting for I2C start-recording command...   ***\r\n");
+    xprintf("****************************************************\r\n");
+
     /* ---- Step 3: mount SD AFTER sensor/datapath init so pin mux is stable ---- */
     sdlog_session_init();
 

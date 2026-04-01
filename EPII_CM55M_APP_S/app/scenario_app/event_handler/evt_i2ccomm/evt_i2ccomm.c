@@ -32,7 +32,7 @@
 #include "powermode.h"
 
 #define DBG_EVT_IICS_CMD_LOG             (1)
-#define DBG_EVT_IICS_CALLBACK_LOG        (0)
+#define DBG_EVT_IICS_CALLBACK_LOG        (1)
 
 #if DBG_EVT_IICS_CMD_LOG
     #define dbg_evt_iics_cmd(fmt, ...)   xprintf(fmt, ##__VA_ARGS__)
