@@ -77,8 +77,8 @@ DRIVERS_IP_INSTANCE  ?= RTC0 \
 						AON_GPIO \
 						I2S_HOST \
 						I2S_SLAVE \
-						IIIC_SLAVE0 \
-						IIIC_SLAVE1 \
+						IIC_SLAVE0 \
+						IIC_SLAVE1 \
 						PWM0 \
 						PWM1 \
 						PWM2 \

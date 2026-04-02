@@ -129,6 +129,10 @@ void pinmux_init(void)
 {
     SCU_PINMUX_CFG_T pinmux_cfg;
     hx_drv_scu_get_all_pinmux_cfg(&pinmux_cfg);
+    
+    pinmux_cfg.pin_pa2 = SCU_PA2_PINMUX_SB_I2C_S_SCL_0;
+    pinmux_cfg.pin_pa3 = SCU_PA3_PINMUX_SB_I2C_S_SDA_0;
+    
     spi_m_pinmux_cfg(&pinmux_cfg);
     hx_drv_scu_set_all_pinmux_cfg(&pinmux_cfg, 1);
 }
