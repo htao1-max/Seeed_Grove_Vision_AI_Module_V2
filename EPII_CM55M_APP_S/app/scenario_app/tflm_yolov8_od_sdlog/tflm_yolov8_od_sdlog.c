@@ -645,23 +645,18 @@ int tflm_yolov8_od_sdlog_app(void) {
     /* ---- Step 2: arm I2C slave callback (before events start) ---- */
     i2c_cmd_init();
 
+    /* ---- Step 3: mount SD BEFORE event loop (which never returns) ---- */
+    sdlog_session_init();
+
     if(g_use_case == 0) {
         xprintf("YOLOv8n object detection (sdlog)\n");
 #ifdef EN_ALGO
         cv_yolov8n_ob_init(true, true, YOLOV8_OBJECT_DETECTION_FLASH_ADDR);
 #endif
+        /* NOTE: app_start_state -> event_handler_start -> hx_eventloop_start
+         * is an infinite loop — nothing after this call executes. */
         app_start_state(APP_STATE_ALLON_YOLOV8N_OB);
     }
-
-    /* ---- Connectivity banner ---- */
-    xprintf("\r\n****************************************************\r\n");
-    xprintf("***  I2C slave 0 listening on 0x62 (7-bit)       ***\r\n");
-    xprintf("***  I2C slave 1 listening on 0x64 (7-bit)       ***\r\n");
-    xprintf("***  Waiting for I2C start-recording command...   ***\r\n");
-    xprintf("****************************************************\r\n");
-
-    /* ---- Step 3: mount SD AFTER sensor/datapath init so pin mux is stable ---- */
-    sdlog_session_init();
 
     return 0;
 }
