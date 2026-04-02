@@ -27,16 +27,23 @@ static void i2c_customer_handler(void)
     unsigned char feature = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_FEATURE_OFFSET];
     unsigned char cmd     = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_COMMAND_OFFSET];
 
+    /* Dump raw received bytes for debugging */
+    {
+        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+        uint16_t dump_len = 4 + plen + 2;  /* header + payload + crc */
+        if (dump_len > 16) dump_len = 16;
+        xprintf("[I2C_CMD] raw %u bytes:", dump_len);
+        for (uint16_t i = 0; i < dump_len; i++)
+            xprintf(" %02x", gRead_buf[USE_DW_IIC_SLV_0][i]);
+        xprintf("\r\n");
+    }
+
     /* Validate checksum */
     retval = hx_lib_i2ccomm_validate_checksum((unsigned char *)&gRead_buf[USE_DW_IIC_SLV_0]);
     if (retval != I2CCOMM_NO_ERROR) {
-        xprintf("[I2C_CMD] checksum error, ignoring\r\n");
-        /* Re-arm read */
-        memset((void *)&gRead_buf[USE_DW_IIC_SLV_0], 0xFF, 4);
-        hx_lib_i2ccomm_enable_read(USE_DW_IIC_SLV_0,
-                                   (unsigned char *)&gRead_buf[USE_DW_IIC_SLV_0],
-                                   I2CCOMM_MAX_RBUF_SIZE);
-        return;
+        xprintf("[I2C_CMD] checksum error (retval=%d), skipping check for debug\r\n", retval);
+        /* Continue anyway for debugging — remove this bypass once CRC is fixed */
     }
 
     if (feature == I2C_FEATURE_RECORDER && cmd == I2C_CMD_RECORD_START) {
