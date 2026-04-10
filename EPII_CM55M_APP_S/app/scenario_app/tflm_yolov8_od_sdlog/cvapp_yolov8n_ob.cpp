@@ -34,7 +34,7 @@
 #include "memory_manage.h"
 #include <send_result.h>
 
-#define CHANGE_YOLOV8_OB_OUPUT_SHAPE 1
+#define CHANGE_YOLOV8_OB_OUPUT_SHAPE 0
 
 #define INPUT_IMAGE_CHANNELS 3
 
@@ -334,6 +334,98 @@ static void yolov8_ob_post_processing(tflite::MicroInterpreter* static_interpret
         el_algo.emplace_front(temp_el_box);
 
         /* Store result for sdlog */
+        if (g_last_result_count < MAX_SDLOG_RESULTS) {
+            g_last_results[g_last_result_count].conf      = confidences[idx];
+            g_last_results[g_last_result_count].class_idx = class_idxs[idx];
+            g_last_result_count++;
+        }
+    }
+}
+#else
+static void yolov8_ob_post_processing(tflite::MicroInterpreter* static_interpreter,float modelScoreThreshold, float modelNMSThreshold, struct_yolov8_ob_algoResult *alg, std::forward_list<el_box_t> &el_algo)
+{
+    uint32_t img_w = app_get_raw_width();
+    uint32_t img_h = app_get_raw_height();
+    TfLiteTensor* output = static_interpreter->output(0);
+    int num_classes = output->dims->data[1] - 4;
+
+    int input_w = YOLOV8_OB_INPUT_TENSOR_WIDTH;
+    int input_h = YOLOV8_OB_INPUT_TENSOR_HEIGHT;
+
+    std::vector<uint16_t> class_idxs;
+    std::vector<float> confidences;
+    std::vector<box> boxes;
+
+    float output_scale = ((TfLiteAffineQuantization*)(output->quantization.params))->scale->data[0];
+    int output_zeropoint = ((TfLiteAffineQuantization*)(output->quantization.params))->zero_point->data[0];
+
+    for(int dims_cnt_2 = 0; dims_cnt_2 < output->dims->data[2]; dims_cnt_2++)
+    {
+        float outputs_bbox_data[4];
+        float maxScore = (-1);
+        uint16_t maxClassIndex = 0;
+        for(int dims_cnt_1 = 0; dims_cnt_1 < output->dims->data[1]; dims_cnt_1++)
+        {
+            int value = output->data.int8[dims_cnt_2 + dims_cnt_1 * output->dims->data[2]];
+            float deq_value = ((float)value - (float)output_zeropoint) * output_scale;
+            if(dims_cnt_1 < 4)
+            {
+                if(dims_cnt_1 % 2)
+                    deq_value *= (float)input_h;
+                else
+                    deq_value *= (float)input_w;
+                outputs_bbox_data[dims_cnt_1] = deq_value;
+            }
+            else
+            {
+                if(maxScore < deq_value)
+                {
+                    maxScore = deq_value;
+                    maxClassIndex = dims_cnt_1 - 4;
+                }
+            }
+        }
+        if (maxScore >= modelScoreThreshold)
+        {
+            box bbox;
+            bbox.x = (outputs_bbox_data[0] - (0.5 * outputs_bbox_data[2]));
+            bbox.y = (outputs_bbox_data[1] - (0.5 * outputs_bbox_data[3]));
+            bbox.w = outputs_bbox_data[2];
+            bbox.h = outputs_bbox_data[3];
+            boxes.push_back(bbox);
+            class_idxs.push_back(maxClassIndex);
+            confidences.push_back(maxScore);
+        }
+    }
+
+    std::vector<int> nms_result;
+    yolov8_NMSBoxes(boxes, confidences, modelScoreThreshold, modelNMSThreshold, nms_result);
+
+    g_last_result_count = 0;
+
+    for (int i = 0; i < (int)nms_result.size(); i++)
+    {
+        if(!(MAX_TRACKED_YOLOV8_ALGO_RES-i)) break;
+        int idx = nms_result[i];
+
+        float scale_factor_w = (float)img_w / (float)YOLOV8_OB_INPUT_TENSOR_WIDTH;
+        float scale_factor_h = (float)img_h / (float)YOLOV8_OB_INPUT_TENSOR_HEIGHT;
+        alg->obr[i].confidence = confidences[idx];
+        alg->obr[i].bbox.x      = (uint32_t)(boxes[idx].x * scale_factor_w);
+        alg->obr[i].bbox.y      = (uint32_t)(boxes[idx].y * scale_factor_h);
+        alg->obr[i].bbox.width  = (uint32_t)(boxes[idx].w * scale_factor_w);
+        alg->obr[i].bbox.height = (uint32_t)(boxes[idx].h * scale_factor_h);
+        alg->obr[i].class_idx   = class_idxs[idx];
+
+        el_box_t temp_el_box;
+        temp_el_box.score  = confidences[idx] * 100;
+        temp_el_box.target = class_idxs[idx];
+        temp_el_box.x = (uint32_t)(boxes[idx].x * scale_factor_w);
+        temp_el_box.y = (uint32_t)(boxes[idx].y * scale_factor_h);
+        temp_el_box.w = (uint32_t)(boxes[idx].w * scale_factor_w);
+        temp_el_box.h = (uint32_t)(boxes[idx].h * scale_factor_h);
+        el_algo.emplace_front(temp_el_box);
+
         if (g_last_result_count < MAX_SDLOG_RESULTS) {
             g_last_results[g_last_result_count].conf      = confidences[idx];
             g_last_results[g_last_result_count].class_idx = class_idxs[idx];
