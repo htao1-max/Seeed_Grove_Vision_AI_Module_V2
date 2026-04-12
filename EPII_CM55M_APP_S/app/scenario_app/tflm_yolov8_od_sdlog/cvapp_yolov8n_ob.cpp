@@ -193,8 +193,28 @@ int cv_yolov8n_ob_init(bool security_enable, bool privilege_enable, uint32_t mod
         yolov8n_ob_int_ptr = &yolov8n_ob_static_interpreter;
         yolov8n_ob_input = yolov8n_ob_static_interpreter.input(0);
         yolov8n_ob_output = yolov8n_ob_static_interpreter.output(0);
+        size_t n_out = yolov8n_ob_static_interpreter.outputs_size();
+        xprintf("yolov8n_ob outputs_size=%u\n", (unsigned)n_out);
+        if (yolov8n_ob_output && yolov8n_ob_output->dims) {
+            xprintf("yolov8n_ob output(0) dims=%d shape=[",
+                    yolov8n_ob_output->dims->size);
+            for (int d = 0; d < yolov8n_ob_output->dims->size; d++)
+                xprintf("%d%s", yolov8n_ob_output->dims->data[d],
+                        d + 1 < yolov8n_ob_output->dims->size ? "," : "");
+            xprintf("]\n");
+        }
 #if CHANGE_YOLOV8_OB_OUPUT_SHAPE
+        if (n_out < 2) {
+            xprintf("[ERROR] CHANGE_YOLOV8_OB_OUPUT_SHAPE=1 but model has %u output(s); expected 2\n",
+                    (unsigned)n_out);
+            return false;
+        }
         yolov8n_ob_output2 = yolov8n_ob_static_interpreter.output(1);
+#else
+        if (n_out != 1) {
+            xprintf("[WARN] expected 1-output model, got %u outputs\n",
+                    (unsigned)n_out);
+        }
 #endif
     }
 
@@ -347,7 +367,16 @@ static void yolov8_ob_post_processing(tflite::MicroInterpreter* static_interpret
     uint32_t img_w = app_get_raw_width();
     uint32_t img_h = app_get_raw_height();
     TfLiteTensor* output = static_interpreter->output(0);
+    if (!output || !output->dims || output->dims->size < 3) {
+        xprintf("[ERROR] yolov8 output tensor missing/invalid\n");
+        return;
+    }
     int num_classes = output->dims->data[1] - 4;
+    if (num_classes < 1 || output->dims->data[2] <= 0) {
+        xprintf("[ERROR] yolov8 unexpected shape: dims[1]=%d dims[2]=%d\n",
+                output->dims->data[1], output->dims->data[2]);
+        return;
+    }
 
     int input_w = YOLOV8_OB_INPUT_TENSOR_WIDTH;
     int input_h = YOLOV8_OB_INPUT_TENSOR_HEIGHT;
