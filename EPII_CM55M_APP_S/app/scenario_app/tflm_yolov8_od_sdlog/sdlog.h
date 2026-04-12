@@ -22,6 +22,12 @@ void sdlog_save_all(uint32_t addr, uint32_t sz, const char *fname);
 void sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname);
 
 /**
+ * sdlog_save_detect_txt() — write a text annotation file to SESSION_XXXX/DETECT/<fname>.
+ * Used to save YOLO bounding box results alongside detected images.
+ */
+void sdlog_save_detect_txt(const char *fname, const char *content);
+
+/**
  * sdlog_write() — printf-style append to SESSION_XXXX/session.log.
  * Flushes (f_sync) after every write so entries survive a power loss.
  */

@@ -165,6 +165,27 @@ void sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname)
 }
 
 /* -----------------------------------------------------------------------
+ * sdlog_save_detect_txt  (write annotation text file to DETECT/)
+ * -------------------------------------------------------------------- */
+void sdlog_save_detect_txt(const char *fname, const char *content)
+{
+    if (!g_sdlog_ready) return;
+
+    char path[80];
+    FIL fil;
+    UINT bw;
+
+    xsprintf(path, "%s/DETECT/%s", g_session_dir, fname);
+    FRESULT res = f_open(&fil, path, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res == FR_OK) {
+        f_write(&fil, content, strlen(content), &bw);
+        f_close(&fil);
+    } else {
+        xprintf("[SDLOG] f_open(%s) res=%d\r\n", path, res);
+    }
+}
+
+/* -----------------------------------------------------------------------
  * sdlog_write  (printf-style, flushed after each call)
  * -------------------------------------------------------------------- */
 void sdlog_write(const char *fmt, ...)

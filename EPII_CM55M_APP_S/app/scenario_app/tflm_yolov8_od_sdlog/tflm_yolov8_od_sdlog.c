@@ -492,18 +492,51 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
 
             /* 2. Save to DETECT/ if any object is above threshold */
             int n = cvapp_get_result_count();
+            int triggered = 0;
+            char annot[512];
+            int annot_len = 0;
+
+            /* First pass: build annotation buffer with all detections */
             for (int i = 0; i < n; i++) {
                 float conf;
                 uint16_t cls;
                 cvapp_get_result(i, &conf, &cls);
-                if (conf >= g_detect_threshold) {
-                    xsprintf(fname, "det_%04lu.jpg", g_detect_count);
-                    sdlog_save_detect(jpeg_addr, jpeg_sz, fname);
-                    sdlog_write("[DETECT] %s score=%.2f class=%u (frame %lu)\r\n",
-                                fname, conf, (unsigned)cls, g_frame_count);
-                    g_detect_count++;
-                    break; /* one save per frame is enough */
+                if (conf >= g_detect_threshold && !triggered)
+                    triggered = 1;
+                /* Append every detection to annotation buffer */
+                annot_len += snprintf(annot + annot_len, sizeof(annot) - annot_len,
+                    "%u %.2f %lu %lu %lu %lu\n",
+                    (unsigned)cls, conf,
+                    algoresult_yolov8n_ob.obr[i].bbox.x,
+                    algoresult_yolov8n_ob.obr[i].bbox.y,
+                    algoresult_yolov8n_ob.obr[i].bbox.width,
+                    algoresult_yolov8n_ob.obr[i].bbox.height);
+            }
+
+            /* If at least one detection exceeded threshold, save image + annotation */
+            if (triggered) {
+                xsprintf(fname, "det_%04lu.jpg", g_detect_count);
+                sdlog_save_detect(jpeg_addr, jpeg_sz, fname);
+
+                char txt_fname[48];
+                xsprintf(txt_fname, "det_%04lu.txt", g_detect_count);
+                sdlog_save_detect_txt(txt_fname, annot);
+
+                /* Log all detections for this frame to session.log */
+                sdlog_write("[DETECT] %s (%d objects, frame %lu)\r\n",
+                            fname, n, g_frame_count);
+                for (int i = 0; i < n; i++) {
+                    float conf;
+                    uint16_t cls;
+                    cvapp_get_result(i, &conf, &cls);
+                    sdlog_write("  obj[%d] class=%u conf=%.2f bbox=(%lu,%lu,%lu,%lu)\r\n",
+                                i, (unsigned)cls, conf,
+                                algoresult_yolov8n_ob.obr[i].bbox.x,
+                                algoresult_yolov8n_ob.obr[i].bbox.y,
+                                algoresult_yolov8n_ob.obr[i].bbox.width,
+                                algoresult_yolov8n_ob.obr[i].bbox.height);
                 }
+                g_detect_count++;
             }
             g_frame_count++;
         }
