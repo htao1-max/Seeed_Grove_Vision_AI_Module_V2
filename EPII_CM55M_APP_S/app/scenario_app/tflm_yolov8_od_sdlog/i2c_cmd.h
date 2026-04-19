@@ -7,6 +7,9 @@
 #define I2C_FEATURE_RECORDER    0x80
 #define I2C_CMD_RECORD_START    0x01
 
+#define I2C_FEATURE_LOG         0x82
+#define I2C_CMD_LOG_WRITE       0x01
+
 /**
  * g_recording_active — set to 1 by I2C handler when the host sends
  * feature=0x80, cmd=0x01.  Checked every frame in the datapath callback.

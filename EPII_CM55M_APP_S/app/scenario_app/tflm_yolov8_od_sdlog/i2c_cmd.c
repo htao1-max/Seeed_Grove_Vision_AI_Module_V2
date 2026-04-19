@@ -65,6 +65,32 @@ static void i2c_customer_handler(void)
         xprintf("****************************************************\r\n");
         xprintf("****************************************************\r\n");
         sdlog_write("[I2C] Recording started (threshold=%.2f)\r\n", g_detect_threshold);
+    } else if (feature == I2C_FEATURE_LOG && cmd == I2C_CMD_LOG_WRITE) {
+        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+
+        if (plen < 2 || plen > I2CCOMM_MAX_PAYLOAD_SIZE) {
+            xprintf("[I2C_LOG] bad plen=%u\r\n", (unsigned)plen);
+        } else {
+            const char *buf = (const char *)&gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
+            size_t tag_len = strnlen(buf, 16);
+            if (tag_len >= 16 || (tag_len + 1) >= plen) {
+                xprintf("[I2C_LOG] malformed payload (tag_len=%u, plen=%u)\r\n",
+                        (unsigned)tag_len, (unsigned)plen);
+            } else {
+                const char *tag = buf;
+                const char *msg = buf + tag_len + 1;
+                size_t msg_max = (size_t)plen - (tag_len + 1);
+                size_t msg_len = strnlen(msg, msg_max);
+                if (msg_len >= msg_max) {
+                    xprintf("[I2C_LOG] msg not NUL-terminated (msg_max=%u)\r\n",
+                            (unsigned)msg_max);
+                } else {
+                    sdlog_write("[%s] %s\r\n", tag, msg);
+                    xprintf("[I2C_LOG] [%s] %s\r\n", tag, msg);
+                }
+            }
+        }
     } else {
         xprintf("[I2C_CMD] Unknown customer cmd: feature=0x%02x cmd=0x%02x\r\n", feature, cmd);
     }
