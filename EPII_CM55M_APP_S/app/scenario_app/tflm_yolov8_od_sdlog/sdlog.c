@@ -260,11 +260,9 @@ void sdlog_log_drain(void)
         sdlog_ring_entry_t *e = &g_ring[g_ring_tail % SDLOG_RING_SLOTS];
 
         char line[SDLOG_RING_TAG + SDLOG_RING_MSG + 8];
-        int n = xsprintf(line, "[%s] %s\r\n", e->tag, e->msg);
-        if (n > 0) {
-            UINT bw;
-            f_write(&g_log_fil, line, (UINT)n, &bw);
-        }
+        xsprintf(line, "[%s] %s\r\n", e->tag, e->msg);
+        UINT bw;
+        f_write(&g_log_fil, line, (UINT)strlen(line), &bw);
 
         __DMB();
         g_ring_tail++;
@@ -276,12 +274,10 @@ void sdlog_log_drain(void)
         uint32_t d = g_ring_dropped;
         g_ring_dropped = 0;
         char warn[64];
-        int n = xsprintf(warn, "[SDLOG] dropped %lu log entries (ring full)\r\n",
-                         (unsigned long)d);
-        if (n > 0) {
-            UINT bw;
-            f_write(&g_log_fil, warn, (UINT)n, &bw);
-            f_sync(&g_log_fil);
-        }
+        xsprintf(warn, "[SDLOG] dropped %lu log entries (ring full)\r\n",
+                 (unsigned long)d);
+        UINT bw;
+        f_write(&g_log_fil, warn, (UINT)strlen(warn), &bw);
+        f_sync(&g_log_fil);
     }
 }
