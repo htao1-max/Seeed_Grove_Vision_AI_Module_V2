@@ -86,7 +86,11 @@ static void i2c_customer_handler(void)
                     xprintf("[I2C_LOG] msg not NUL-terminated (msg_max=%u)\r\n",
                             (unsigned)msg_max);
                 } else {
-                    sdlog_write("[%s] %s\r\n", tag, msg);
+                    /* Defer SD write to main loop — SPSC ring enqueue is safe
+                     * from this (highest-priority) event context. Calling
+                     * f_write here would race the scenario-loop JPEG saves on
+                     * the shared FatFs/SPI bus. */
+                    sdlog_log_enqueue(tag, msg);
                     xprintf("[I2C_LOG] [%s] %s\r\n", tag, msg);
                 }
             }

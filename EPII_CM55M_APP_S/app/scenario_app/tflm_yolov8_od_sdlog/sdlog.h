@@ -33,4 +33,18 @@ void sdlog_save_detect_txt(const char *fname, const char *content);
  */
 void sdlog_write(const char *fmt, ...);
 
+/**
+ * sdlog_log_enqueue() — SPSC ring enqueue for log entries arriving from the
+ * i2ccomm RX event context (can preempt the main scenario loop). Only copies
+ * into a RAM ring; no SD / SPI / FatFs access here.
+ */
+void sdlog_log_enqueue(const char *tag, const char *msg);
+
+/**
+ * sdlog_log_drain() — called from the main scenario loop. Pops every pending
+ * entry from the ring and writes it to session.log. Must NOT be called from
+ * interrupt / event-callback context.
+ */
+void sdlog_log_drain(void);
+
 #endif /* TFLM_YOLOV8_OD_SDLOG_SDLOG_H_ */

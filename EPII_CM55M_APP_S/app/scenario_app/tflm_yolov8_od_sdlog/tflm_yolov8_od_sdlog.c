@@ -541,6 +541,10 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
             g_frame_count++;
         }
 
+        /* Drain any deferred log entries from the i2ccomm RX event. Runs on
+         * the main scenario thread — single writer to session.log. */
+        sdlog_log_drain();
+
         /* Clear algo results for next frame */
         for (int i = 0; i < MAX_TRACKED_YOLOV8_ALGO_RES; ++i) {
             algoresult_yolov8n_ob.obr[i].bbox.x      = 0;

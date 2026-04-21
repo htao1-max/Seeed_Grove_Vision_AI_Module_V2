@@ -202,3 +202,86 @@ void sdlog_write(const char *fmt, ...)
     f_write(&g_log_fil, buf, strlen(buf), &bw);
     f_sync(&g_log_fil);
 }
+
+/* -----------------------------------------------------------------------
+ * Deferred-log SPSC ring
+ *
+ * Producer: i2c_customer_handler (i2ccomm RX event, highest priority — can
+ *           preempt the main scenario loop). Only memcpy + head advance.
+ * Consumer: sdlog_log_drain(), called once per frame from the scenario loop.
+ *
+ * Word-sized volatile head/tail indices are atomic on Cortex-M55, so no
+ * locking is needed for a single-producer / single-consumer ring.
+ * -------------------------------------------------------------------- */
+#define SDLOG_RING_SLOTS 8
+#define SDLOG_RING_MSG   208  /* msg capacity per slot */
+#define SDLOG_RING_TAG   16
+
+typedef struct {
+    char tag[SDLOG_RING_TAG];
+    char msg[SDLOG_RING_MSG];
+} sdlog_ring_entry_t;
+
+static sdlog_ring_entry_t g_ring[SDLOG_RING_SLOTS];
+static volatile uint32_t  g_ring_head = 0;   /* producer writes */
+static volatile uint32_t  g_ring_tail = 0;   /* consumer reads */
+static volatile uint32_t  g_ring_dropped = 0;
+
+void sdlog_log_enqueue(const char *tag, const char *msg)
+{
+    if (tag == NULL || msg == NULL) return;
+
+    uint32_t head = g_ring_head;
+    uint32_t tail = g_ring_tail;
+    if ((head - tail) >= SDLOG_RING_SLOTS) {
+        g_ring_dropped++;
+        return;
+    }
+
+    sdlog_ring_entry_t *e = &g_ring[head % SDLOG_RING_SLOTS];
+
+    size_t tl = strnlen(tag, SDLOG_RING_TAG - 1);
+    memcpy(e->tag, tag, tl);
+    e->tag[tl] = '\0';
+
+    size_t ml = strnlen(msg, SDLOG_RING_MSG - 1);
+    memcpy(e->msg, msg, ml);
+    e->msg[ml] = '\0';
+
+    __DMB();
+    g_ring_head = head + 1;
+}
+
+void sdlog_log_drain(void)
+{
+    if (!g_sdlog_ready) return;
+
+    while (g_ring_tail != g_ring_head) {
+        sdlog_ring_entry_t *e = &g_ring[g_ring_tail % SDLOG_RING_SLOTS];
+
+        char line[SDLOG_RING_TAG + SDLOG_RING_MSG + 8];
+        int n = xsprintf(line, "[%s] %s\r\n", e->tag, e->msg);
+        if (n > 0) {
+            UINT bw;
+            f_write(&g_log_fil, line, (UINT)n, &bw);
+        }
+
+        __DMB();
+        g_ring_tail++;
+    }
+
+    f_sync(&g_log_fil);
+
+    if (g_ring_dropped) {
+        uint32_t d = g_ring_dropped;
+        g_ring_dropped = 0;
+        char warn[64];
+        int n = xsprintf(warn, "[SDLOG] dropped %lu log entries (ring full)\r\n",
+                         (unsigned long)d);
+        if (n > 0) {
+            UINT bw;
+            f_write(&g_log_fil, warn, (UINT)n, &bw);
+            f_sync(&g_log_fil);
+        }
+    }
+}
