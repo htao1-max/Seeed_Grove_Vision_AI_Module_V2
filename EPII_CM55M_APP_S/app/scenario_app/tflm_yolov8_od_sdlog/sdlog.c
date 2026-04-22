@@ -5,6 +5,7 @@
 #include "ff.h"
 #include "hx_drv_gpio.h"
 #include "hx_drv_scu.h"
+#include "system_WE2_ARMCM55.h"
 #include "sdlog.h"
 
 /* -----------------------------------------------------------------------
@@ -14,6 +15,19 @@ static FATFS  g_fs;
 static char   g_session_dir[16];   /* e.g. "SESSION_0003" */
 static FIL    g_log_fil;
 static int    g_sdlog_ready = 0;
+
+/* ms since boot, derived from the bare-metal SysTick countdown + overflow
+ * counter (SystemGetTick) and SystemCoreClock. */
+static uint32_t sdlog_now_ms(void)
+{
+    uint32_t tick, loops;
+    SystemGetTick(&tick, &loops);
+    const uint64_t period = (uint64_t)SysTick_LOAD_RELOAD_Msk + 1ULL;
+    uint64_t cycles = (uint64_t)loops * period + (period - (uint64_t)tick);
+    uint32_t cyc_per_ms = SystemCoreClock / 1000U;
+    if (cyc_per_ms == 0U) return 0U;
+    return (uint32_t)(cycles / cyc_per_ms);
+}
 
 /* GPIO callbacks required by fatfs/port/mmc_spi/mmc_we2_spi.c */
 void SSPI_CS_GPIO_Output_Level(bool setLevelHigh)
@@ -192,10 +206,14 @@ void sdlog_write(const char *fmt, ...)
 {
     if (!g_sdlog_ready) return;
 
-    char buf[256];
+    char buf[280];
+    int pfx = snprintf(buf, sizeof(buf), "[%010lu ms] ",
+                       (unsigned long)sdlog_now_ms());
+    if (pfx < 0) pfx = 0;
+
     va_list args;
     va_start(args, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, args);
+    vsnprintf(buf + pfx, sizeof(buf) - (size_t)pfx, fmt, args);
     va_end(args);
 
     UINT bw;
@@ -218,8 +236,9 @@ void sdlog_write(const char *fmt, ...)
 #define SDLOG_RING_TAG   16
 
 typedef struct {
-    char tag[SDLOG_RING_TAG];
-    char msg[SDLOG_RING_MSG];
+    uint32_t ts_ms;                     /* ms since boot, captured at enqueue */
+    char     tag[SDLOG_RING_TAG];
+    char     msg[SDLOG_RING_MSG];
 } sdlog_ring_entry_t;
 
 static sdlog_ring_entry_t g_ring[SDLOG_RING_SLOTS];
@@ -240,6 +259,8 @@ void sdlog_log_enqueue(const char *tag, const char *msg)
 
     sdlog_ring_entry_t *e = &g_ring[head % SDLOG_RING_SLOTS];
 
+    e->ts_ms = sdlog_now_ms();
+
     size_t tl = strnlen(tag, SDLOG_RING_TAG - 1);
     memcpy(e->tag, tag, tl);
     e->tag[tl] = '\0';
@@ -259,8 +280,9 @@ void sdlog_log_drain(void)
     while (g_ring_tail != g_ring_head) {
         sdlog_ring_entry_t *e = &g_ring[g_ring_tail % SDLOG_RING_SLOTS];
 
-        char line[SDLOG_RING_TAG + SDLOG_RING_MSG + 8];
-        xsprintf(line, "[%s] %s\r\n", e->tag, e->msg);
+        char line[SDLOG_RING_TAG + SDLOG_RING_MSG + 32];
+        xsprintf(line, "[%010lu ms] [%s] %s\r\n",
+                 (unsigned long)e->ts_ms, e->tag, e->msg);
         UINT bw;
         f_write(&g_log_fil, line, (UINT)strlen(line), &bw);
 
@@ -273,9 +295,9 @@ void sdlog_log_drain(void)
     if (g_ring_dropped) {
         uint32_t d = g_ring_dropped;
         g_ring_dropped = 0;
-        char warn[64];
-        xsprintf(warn, "[SDLOG] dropped %lu log entries (ring full)\r\n",
-                 (unsigned long)d);
+        char warn[96];
+        xsprintf(warn, "[%010lu ms] [SDLOG] dropped %lu log entries (ring full)\r\n",
+                 (unsigned long)sdlog_now_ms(), (unsigned long)d);
         UINT bw;
         f_write(&g_log_fil, warn, (UINT)strlen(warn), &bw);
         f_sync(&g_log_fil);
