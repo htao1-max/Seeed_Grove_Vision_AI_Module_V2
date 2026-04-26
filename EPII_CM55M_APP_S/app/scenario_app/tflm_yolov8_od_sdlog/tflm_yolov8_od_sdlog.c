@@ -544,6 +544,7 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
         /* Drain any deferred log entries from the i2ccomm RX event. Runs on
          * the main scenario thread — single writer to session.log. */
         sdlog_log_drain();
+        sdlog_tlm_drain();
 
         /* Clear algo results for next frame */
         for (int i = 0; i < MAX_TRACKED_YOLOV8_ALGO_RES; ++i) {
@@ -684,6 +685,7 @@ int tflm_yolov8_od_sdlog_app(void) {
 
     /* ---- Step 3: mount SD BEFORE event loop (which never returns) ---- */
     sdlog_session_init();
+    sdlog_tlm_init();
 
     if(g_use_case == 0) {
         xprintf("YOLOv8n object detection (sdlog)\n");
