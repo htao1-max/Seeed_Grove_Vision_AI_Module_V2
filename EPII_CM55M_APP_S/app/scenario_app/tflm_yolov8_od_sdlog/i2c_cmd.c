@@ -95,6 +95,19 @@ static void i2c_customer_handler(void)
                 }
             }
         }
+    } else if (feature == I2C_FEATURE_TLM && cmd == I2C_CMD_TLM_WRITE) {
+        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+
+        if (plen == 0 || plen > I2CCOMM_MAX_PAYLOAD_SIZE
+            || (plen % TLM_SAMPLE_BYTES) != 0) {
+            xprintf("[I2C_TLM] bad plen=%u\r\n", (unsigned)plen);
+        } else {
+            const uint8_t *payload = (const uint8_t *)&gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
+            sdlog_tlm_enqueue(payload, plen);
+            xprintf("[I2C_TLM] enqueued %u bytes (%u samples)\r\n",
+                    (unsigned)plen, (unsigned)(plen / TLM_SAMPLE_BYTES));
+        }
     } else {
         xprintf("[I2C_CMD] Unknown customer cmd: feature=0x%02x cmd=0x%02x\r\n", feature, cmd);
     }
