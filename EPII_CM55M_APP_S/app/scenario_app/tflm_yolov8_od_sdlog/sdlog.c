@@ -7,6 +7,7 @@
 #include "hx_drv_scu.h"
 #include "system_WE2_ARMCM55.h"
 #include "sdlog.h"
+#include "i2c_cmd.h"   /* TLM_SAMPLE_BYTES */
 
 /* -----------------------------------------------------------------------
  * Module state
@@ -342,5 +343,133 @@ void sdlog_log_drain(void)
         UINT bw;
         f_write(&g_log_fil, warn, (UINT)strlen(warn), &bw);
         f_sync(&g_log_fil);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Telemetry SPSC ring + drain
+ *
+ * Producer: i2c_customer_handler (i2ccomm RX event). Only memcpy +
+ *           head advance.
+ * Consumer: sdlog_tlm_drain(), called once per scenario loop iteration.
+ * -------------------------------------------------------------------- */
+#define SDLOG_TLM_RING_SLOTS  4
+#define SDLOG_TLM_BLOB_MAX    (4U * 44U)  /* TLM_BATCH_SIZE * TLM_SAMPLE_BYTES */
+
+typedef struct {
+    uint16_t plen;
+    uint8_t  blob[SDLOG_TLM_BLOB_MAX];
+} sdlog_tlm_entry_t;
+
+static sdlog_tlm_entry_t g_tlm_ring[SDLOG_TLM_RING_SLOTS];
+static volatile uint32_t g_tlm_head = 0;   /* producer */
+static volatile uint32_t g_tlm_tail = 0;   /* consumer */
+static volatile uint32_t g_tlm_dropped = 0;
+
+void sdlog_tlm_enqueue(const uint8_t *payload, uint16_t plen)
+{
+    if (payload == NULL) return;
+    if (plen == 0 || plen > SDLOG_TLM_BLOB_MAX || (plen % TLM_SAMPLE_BYTES) != 0) {
+        return;  /* drop malformed; logged at dispatcher */
+    }
+
+    uint32_t head = g_tlm_head;
+    uint32_t tail = g_tlm_tail;
+    if ((head - tail) >= SDLOG_TLM_RING_SLOTS) {
+        g_tlm_dropped++;
+        return;
+    }
+
+    sdlog_tlm_entry_t *e = &g_tlm_ring[head % SDLOG_TLM_RING_SLOTS];
+    e->plen = plen;
+    memcpy(e->blob, payload, plen);
+
+    __DMB();
+    g_tlm_head = head + 1;
+}
+
+/* Read 4 little-endian bytes as float (no host-order assumption). */
+static float tlm_unpack_f32_le(const uint8_t *p)
+{
+    uint32_t u = (uint32_t)p[0]
+               | ((uint32_t)p[1] << 8)
+               | ((uint32_t)p[2] << 16)
+               | ((uint32_t)p[3] << 24);
+    float f;
+    memcpy(&f, &u, 4);
+    return f;
+}
+
+static uint32_t tlm_unpack_u32_le(const uint8_t *p)
+{
+    return (uint32_t)p[0]
+         | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16)
+         | ((uint32_t)p[3] << 24);
+}
+
+void sdlog_tlm_drain(void)
+{
+    if (!g_tlm_ready) return;
+
+    int wrote_any = 0;
+
+    while (g_tlm_tail != g_tlm_head) {
+        wrote_any = 1;
+        sdlog_tlm_entry_t *e = &g_tlm_ring[g_tlm_tail % SDLOG_TLM_RING_SLOTS];
+
+        for (uint16_t off = 0; off < e->plen; off += TLM_SAMPLE_BYTES) {
+            const uint8_t *p = &e->blob[off];
+            float qw   = tlm_unpack_f32_le(p +  0);
+            float qx   = tlm_unpack_f32_le(p +  4);
+            float qy   = tlm_unpack_f32_le(p +  8);
+            float qz   = tlm_unpack_f32_le(p + 12);
+            float temp = tlm_unpack_f32_le(p + 16);
+            float vbat = tlm_unpack_f32_le(p + 20);
+            float vm1  = tlm_unpack_f32_le(p + 24);
+            float vm2  = tlm_unpack_f32_le(p + 28);
+            float vm3  = tlm_unpack_f32_le(p + 32);
+            float vm4  = tlm_unpack_f32_le(p + 36);
+            uint32_t stm32_tick = tlm_unpack_u32_le(p + 40);
+
+            uint32_t himax_recv_ms = sdlog_now_ms();
+
+            char line[200];
+            int n = snprintf(line, sizeof(line),
+                "%lu,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%lu\r\n",
+                (unsigned long)stm32_tick,
+                qw, qx, qy, qz, temp, vbat, vm1, vm2, vm3, vm4,
+                (unsigned long)himax_recv_ms);
+            if (n < 0) continue;
+            if (n > (int)sizeof(line)) n = (int)sizeof(line);
+
+            UINT bw;
+            f_write(&g_tlm_fil, line, (UINT)n, &bw);
+
+            if (++g_tlm_sync_ctr >= 60U) {
+                f_sync(&g_tlm_fil);
+                g_tlm_sync_ctr = 0;
+            }
+        }
+
+        __DMB();
+        g_tlm_tail++;
+    }
+
+    /* Trailing sync: when we drained the ring empty, flush any residue
+     * that the sync-every-60 counter didn't cover. At sustained 60 Hz
+     * the ring rarely empties (drains pop 1 frame, more arrive), so
+     * the every-60 counter still dominates. At low rates / end-of-run
+     * this guarantees data hits the SD before idle. */
+    if (wrote_any && g_tlm_tail == g_tlm_head) {
+        f_sync(&g_tlm_fil);
+        g_tlm_sync_ctr = 0;
+    }
+
+    if (g_tlm_dropped) {
+        uint32_t d = g_tlm_dropped;
+        g_tlm_dropped = 0;
+        xprintf("[SDLOG_TLM] dropped %lu telemetry frames (ring full)\r\n",
+                (unsigned long)d);
     }
 }
