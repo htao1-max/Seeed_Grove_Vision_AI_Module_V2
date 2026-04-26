@@ -47,4 +47,28 @@ void sdlog_log_enqueue(const char *tag, const char *msg);
  */
 void sdlog_log_drain(void);
 
+/**
+ * sdlog_tlm_init() — open SESSION_XXXX/telemetry.csv (or top-level
+ * telemetry.csv depending on convention) and write the CSV header row.
+ * Must be called after sdlog_session_init() so the SD card and session
+ * directory already exist.
+ */
+void sdlog_tlm_init(void);
+
+/**
+ * sdlog_tlm_enqueue() — SPSC ring enqueue called from the i2ccomm RX
+ * event context. Copies one I2C frame's payload (TLM_BATCH_SIZE *
+ * TLM_SAMPLE_BYTES bytes) into a RAM ring; no SD / SPI / FatFs access.
+ */
+void sdlog_tlm_enqueue(const uint8_t *payload, uint16_t plen);
+
+/**
+ * sdlog_tlm_drain() — called from the main scenario loop. Pops every
+ * pending frame, unpacks each 44-byte sample, stamps a Himax-side
+ * timestamp, and writes one CSV row per sample. f_syncs every 60
+ * samples (~once per second at 60 Hz). Must NOT be called from
+ * interrupt / event-callback context.
+ */
+void sdlog_tlm_drain(void);
+
 #endif /* TFLM_YOLOV8_OD_SDLOG_SDLOG_H_ */

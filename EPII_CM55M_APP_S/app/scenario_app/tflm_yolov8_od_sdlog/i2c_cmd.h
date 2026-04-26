@@ -10,6 +10,10 @@
 #define I2C_FEATURE_LOG         0x82
 #define I2C_CMD_LOG_WRITE       0x01
 
+#define I2C_FEATURE_TLM         0x83
+#define I2C_CMD_TLM_WRITE       0x01
+#define TLM_SAMPLE_BYTES        44U   /* 10*float32 + 1*uint32, see STM32 spec */
+
 /**
  * g_recording_active — set to 1 by I2C handler when the host sends
  * feature=0x80, cmd=0x01.  Checked every frame in the datapath callback.
