@@ -16,6 +16,11 @@ static char   g_session_dir[16];   /* e.g. "SESSION_0003" */
 static FIL    g_log_fil;
 static int    g_sdlog_ready = 0;
 
+/* Telemetry CSV state */
+static FIL      g_tlm_fil;
+static int      g_tlm_ready    = 0;
+static uint32_t g_tlm_sync_ctr = 0;
+
 /* ms since boot, derived from the bare-metal SysTick countdown + overflow
  * counter (SystemGetTick) and SystemCoreClock. */
 static uint32_t sdlog_now_ms(void)
@@ -154,6 +159,42 @@ void sdlog_session_init(void)
     xprintf("***       [SDLOG] Session %s initialised    ***\r\n", g_session_dir);
     xprintf("****************************************************\r\n");
     xprintf("****************************************************\r\n");
+}
+
+/* -----------------------------------------------------------------------
+ * sdlog_tlm_init — open telemetry.csv inside the active session dir and
+ * write the CSV header row. Must run after sdlog_session_init.
+ * -------------------------------------------------------------------- */
+void sdlog_tlm_init(void)
+{
+    if (!g_sdlog_ready) {
+        xprintf("[SDLOG_TLM] sdlog not ready — skipping telemetry.csv\r\n");
+        return;
+    }
+
+    char path[80];
+    xsprintf(path, "%s/telemetry.csv", g_session_dir);
+
+    FRESULT res = f_open(&g_tlm_fil, path, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK) {
+        xprintf("[SDLOG_TLM] f_open(%s) res=%d — telemetry disabled\r\n", path, res);
+        return;
+    }
+
+    static const char header[] =
+        "stm32_tick_ms,qw,qx,qy,qz,temp_c,vbat,vm1,vm2,vm3,vm4,himax_recv_ms\r\n";
+    UINT bw;
+    res = f_write(&g_tlm_fil, header, (UINT)(sizeof(header) - 1), &bw);
+    if (res != FR_OK) {
+        xprintf("[SDLOG_TLM] header f_write res=%d — telemetry disabled\r\n", res);
+        f_close(&g_tlm_fil);
+        return;
+    }
+    f_sync(&g_tlm_fil);
+
+    g_tlm_ready = 1;
+    g_tlm_sync_ctr = 0;
+    xprintf("[SDLOG_TLM] telemetry.csv ready in %s\r\n", g_session_dir);
 }
 
 /* -----------------------------------------------------------------------
