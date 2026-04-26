@@ -183,7 +183,8 @@ void sdlog_tlm_init(void)
     }
 
     static const char header[] =
-        "stm32_tick_ms,qw,qx,qy,qz,temp_c,vbat,vm1,vm2,vm3,vm4,himax_recv_ms\r\n";
+        "stm32_tick_ms,qw,qx,qy,qz,temp_c,vbat,"
+        "vm1,vm2,vm3,vm4,im1,im2,im3,im4,depth,himax_recv_ms\r\n";
     UINT bw;
     res = f_write(&g_tlm_fil, header, (UINT)(sizeof(header) - 1), &bw);
     if (res != FR_OK) {
@@ -354,7 +355,7 @@ void sdlog_log_drain(void)
  * Consumer: sdlog_tlm_drain(), called once per scenario loop iteration.
  * -------------------------------------------------------------------- */
 #define SDLOG_TLM_RING_SLOTS  4
-#define SDLOG_TLM_BLOB_MAX    (4U * 44U)  /* TLM_BATCH_SIZE * TLM_SAMPLE_BYTES */
+#define SDLOG_TLM_BLOB_MAX    (4U * 64U)  /* TLM_BATCH_SIZE * TLM_SAMPLE_BYTES */
 
 typedef struct {
     uint16_t plen;
@@ -408,6 +409,32 @@ static uint32_t tlm_unpack_u32_le(const uint8_t *p)
          | ((uint32_t)p[3] << 24);
 }
 
+/* Format a float as ",<sign><whole>.<6 fractional digits>" into buf.
+ * Used because xprintf/snprintf in this firmware do NOT support %f
+ * (the EI porting layer's ei_printf_float helper exists for this same
+ * reason). Returns chars written (excluding NUL); never writes more
+ * than (n - 1) bytes. Saturates to ±999999 to keep the helper simple
+ * — telemetry values (volts, amps, deg C, quaternion, depth in m) are
+ * comfortably below that bound. */
+static int tlm_csv_append_f6(char *buf, int n, float f)
+{
+    if (n < 16) return 0;
+
+    int neg = 0;
+    if (f < 0.0f) { neg = 1; f = -f; }
+    if (f > 999999.0f) f = 999999.0f;
+    if (f != f /* NaN */) f = 0.0f;
+
+    uint32_t whole = (uint32_t)f;
+    uint32_t frac  = (uint32_t)((f - (float)whole) * 1000000.0f + 0.5f);
+    if (frac >= 1000000U) { frac = 0; whole++; }
+
+    return snprintf(buf, (size_t)n, ",%s%lu.%06lu",
+                    neg ? "-" : "",
+                    (unsigned long)whole,
+                    (unsigned long)frac);
+}
+
 void sdlog_tlm_drain(void)
 {
     if (!g_tlm_ready) return;
@@ -420,31 +447,55 @@ void sdlog_tlm_drain(void)
 
         for (uint16_t off = 0; off < e->plen; off += TLM_SAMPLE_BYTES) {
             const uint8_t *p = &e->blob[off];
-            float qw   = tlm_unpack_f32_le(p +  0);
-            float qx   = tlm_unpack_f32_le(p +  4);
-            float qy   = tlm_unpack_f32_le(p +  8);
-            float qz   = tlm_unpack_f32_le(p + 12);
-            float temp = tlm_unpack_f32_le(p + 16);
-            float vbat = tlm_unpack_f32_le(p + 20);
-            float vm1  = tlm_unpack_f32_le(p + 24);
-            float vm2  = tlm_unpack_f32_le(p + 28);
-            float vm3  = tlm_unpack_f32_le(p + 32);
-            float vm4  = tlm_unpack_f32_le(p + 36);
-            uint32_t stm32_tick = tlm_unpack_u32_le(p + 40);
+            float qw    = tlm_unpack_f32_le(p +  0);
+            float qx    = tlm_unpack_f32_le(p +  4);
+            float qy    = tlm_unpack_f32_le(p +  8);
+            float qz    = tlm_unpack_f32_le(p + 12);
+            float temp  = tlm_unpack_f32_le(p + 16);
+            float vbat  = tlm_unpack_f32_le(p + 20);
+            float vm1   = tlm_unpack_f32_le(p + 24);
+            float vm2   = tlm_unpack_f32_le(p + 28);
+            float vm3   = tlm_unpack_f32_le(p + 32);
+            float vm4   = tlm_unpack_f32_le(p + 36);
+            float im1   = tlm_unpack_f32_le(p + 40);
+            float im2   = tlm_unpack_f32_le(p + 44);
+            float im3   = tlm_unpack_f32_le(p + 48);
+            float im4   = tlm_unpack_f32_le(p + 52);
+            float depth = tlm_unpack_f32_le(p + 56);
+            uint32_t stm32_tick = tlm_unpack_u32_le(p + 60);
 
             uint32_t himax_recv_ms = sdlog_now_ms();
 
-            char line[200];
-            int n = snprintf(line, sizeof(line),
-                "%lu,%.6f,%.6f,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%lu\r\n",
-                (unsigned long)stm32_tick,
-                qw, qx, qy, qz, temp, vbat, vm1, vm2, vm3, vm4,
-                (unsigned long)himax_recv_ms);
-            if (n < 0) continue;
-            if (n > (int)sizeof(line)) n = (int)sizeof(line);
+            /* Build the CSV row by hand: integer fields use snprintf
+             * (%lu works); float fields go through tlm_csv_append_f6
+             * because the firmware's printf has no %f support. */
+            char line[300];
+            int pos = 0;
+            int rem = (int)sizeof(line);
+
+            int n = snprintf(line + pos, (size_t)rem, "%lu",
+                             (unsigned long)stm32_tick);
+            if (n < 0 || n >= rem) continue;
+            pos += n; rem -= n;
+
+            const float fields[] = {
+                qw, qx, qy, qz, temp, vbat,
+                vm1, vm2, vm3, vm4, im1, im2, im3, im4, depth
+            };
+            for (size_t i = 0; i < sizeof(fields)/sizeof(fields[0]); i++) {
+                n = tlm_csv_append_f6(line + pos, rem, fields[i]);
+                if (n <= 0 || n >= rem) { pos = -1; break; }
+                pos += n; rem -= n;
+            }
+            if (pos < 0) continue;
+
+            n = snprintf(line + pos, (size_t)rem, ",%lu\r\n",
+                         (unsigned long)himax_recv_ms);
+            if (n < 0 || n >= rem) continue;
+            pos += n;
 
             UINT bw;
-            f_write(&g_tlm_fil, line, (UINT)n, &bw);
+            f_write(&g_tlm_fil, line, (UINT)pos, &bw);
 
             if (++g_tlm_sync_ctr >= 60U) {
                 f_sync(&g_tlm_fil);

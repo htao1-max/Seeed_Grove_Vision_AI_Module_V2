@@ -12,7 +12,7 @@
 
 #define I2C_FEATURE_TLM         0x83
 #define I2C_CMD_TLM_WRITE       0x01
-#define TLM_SAMPLE_BYTES        44U   /* 10*float32 + 1*uint32, see STM32 spec */
+#define TLM_SAMPLE_BYTES        64U   /* 15*float32 + 1*uint32, see STM32 spec */
 
 /**
  * g_recording_active — set to 1 by I2C handler when the host sends
