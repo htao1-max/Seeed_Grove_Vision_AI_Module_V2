@@ -267,6 +267,16 @@ uint8_t evt_i2ccomm_1_err_cb(void);  // i2c error event handler
 
 void i2ccomm_cmd_customer_register_cb(USE_DW_IIC_SLV_E iic_id, i2ccomm_customer cb_func);
 
+/**
+ * \brief   Get cumulative count of RX frames dropped because the
+ *          mailbox FIFO was full when an I2C frame arrived. Monotonic
+ *          counter; reader is responsible for diff-tracking if it
+ *          wants edge-triggered prints.
+ * \param   iic_id  one of USE_DW_IIC_SLV_0 / USE_DW_IIC_SLV_1
+ * \retval  cumulative drop count for that iic id
+ */
+uint32_t evt_i2ccomm_get_rx_dropped(USE_DW_IIC_SLV_E iic_id);
+
 /** @} */   //EVT_I2CCOMM_FUNCDLR
 
 #endif /* EVENT_HANDLER_EVT_I2CCOMM_EVT_I2CCOMM_H_ */

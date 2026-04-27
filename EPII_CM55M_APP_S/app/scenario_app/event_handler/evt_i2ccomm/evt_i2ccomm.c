@@ -57,6 +57,8 @@
 #define EVT_I2CS_0_SLV_ADDR         0x62
 #define EVT_I2CS_1_SLV_ADDR         0x64
 
+#define EVT_I2CCOMM_RX_FIFO_SLOTS   16U  /* depth = 16; ~2.1 s coverage at 7.5 Hz wire rate */
+
 /***************************************************
  * Function Declaration
  **************************************************/
@@ -81,6 +83,19 @@ extern hx_event_t g_event[];
 
 unsigned char gWrite_buf[DW_IIC_S_NUM][I2CCOMM_MAX_WBUF_SIZE] __ALIGNED(__SCB_DCACHE_LINE_SIZE);
 unsigned char gRead_buf[DW_IIC_S_NUM][I2CCOMM_MAX_RBUF_SIZE] __ALIGNED(__SCB_DCACHE_LINE_SIZE);
+
+/* RX mailbox FIFO — interposed between i2cs_cb_rx (ISR producer) and
+ * evt_i2ccomm_<id>_rx_cb (main-loop consumer) to stop back-to-back
+ * frames from clobbering gRead_buf during scenario-loop stalls.
+ * SPSC discipline: ISR writes only s_rx_head + s_rx_dropped;
+ * main-loop writes only s_rx_tail. */
+static uint8_t  s_rx_fifo[DW_IIC_S_NUM]
+                         [EVT_I2CCOMM_RX_FIFO_SLOTS]
+                         [I2CCOMM_MAX_RBUF_SIZE]
+                __ALIGNED(__SCB_DCACHE_LINE_SIZE);
+static volatile uint32_t s_rx_head[DW_IIC_S_NUM];
+static volatile uint32_t s_rx_tail[DW_IIC_S_NUM];
+static volatile uint32_t s_rx_dropped[DW_IIC_S_NUM];
 
 I2CCOMM_CFG_T gI2CCOMM_cfg[DW_IIC_S_NUM] = {
     {   
@@ -539,4 +554,8 @@ __attribute__((weak)) void setPS_PDNoVid()
 	hx_lib_pm_trigger(hsc_cfg, lsc_cfg, PM_CLK_PARA_CTRL_BYPMLIB);
 }
 
-
+uint32_t evt_i2ccomm_get_rx_dropped(USE_DW_IIC_SLV_E iic_id)
+{
+    if (iic_id >= DW_IIC_S_NUM) return 0;
+    return s_rx_dropped[iic_id];
+}
