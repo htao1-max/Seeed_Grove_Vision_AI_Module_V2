@@ -73,8 +73,8 @@ static void i2cs_cb_tx(void *param);
 static void i2cs_cb_rx(void *param);
 static void i2cs_cb_err(void *param);
 
-static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id);
-static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id);
+static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id, const uint8_t *frame);
+static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id, const uint8_t *frame);
 static i2ccomm_customer i2ccomm_cmd_customer_process[DW_IIC_S_NUM] = {NULL, NULL};
 
 /****************************************************
@@ -188,6 +188,16 @@ static void i2cs_cb_rx(void *param)
         s_rx_dropped[id]++;
     }
 
+    /* Re-arm HW immediately so it can land the next bus frame into
+     * gRead_buf even while the main loop is busy draining the FIFO.
+     * This is what makes Approach A correct: the consumer never reads
+     * or writes gRead_buf, so HW writing it concurrently with drain
+     * cannot corrupt anything. The previous design re-armed inside
+     * the scenario callback, which raced against the next iteration's
+     * memcpy(fifo[t] -> gRead_buf). */
+    hx_lib_i2ccomm_enable_read(id, (unsigned char *)&gRead_buf[id],
+                               I2CCOMM_MAX_RBUF_SIZE);
+
     hx_event_activate_ISR(g_event[evt_idx]);
 }
 
@@ -223,9 +233,9 @@ uint8_t evt_i2ccomm_0_err_cb(void)
     return HX_EVENT_RETURN_DONE;
 }
 
-static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
+static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id, const uint8_t *frame)
 {
-    unsigned char feature = gRead_buf[iic_id][I2CFMT_FEATURE_OFFSET];
+    unsigned char feature = frame[I2CFMT_FEATURE_OFFSET];
     dbg_evt_iics_cmd("\n");
     dbg_evt_iics_cmd("%s(iic_id:%d, feature:0x%02x) \n",
                      __FUNCTION__, (int)iic_id, feature);
@@ -233,8 +243,7 @@ static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
     switch (feature)
     {
         case I2CCOMM_FEATURE_SYS:
-            evt_i2cs_cmd_process_sysinfo(iic_id);
-            prv_evt_i2ccomm_clear_read_buf_header(iic_id);
+            evt_i2cs_cmd_process_sysinfo(iic_id, frame);
             break;
 
         case I2CCOMM_FEATURE_OTA_RESERVED:
@@ -248,7 +257,7 @@ static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
 
         case I2CCOMM_FEATURE_CUSTOMER_MIN ... I2CCOMM_FEATURE_CUSTOMER_MAX:
             if (i2ccomm_cmd_customer_process[iic_id] != NULL) {
-                i2ccomm_cmd_customer_process[iic_id]();
+                i2ccomm_cmd_customer_process[iic_id](frame);
             }
             break;
 
@@ -256,10 +265,9 @@ static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
             break;
 
         default:
-            prv_evt_i2ccomm_clear_read_buf_header(iic_id);
-            hx_lib_i2ccomm_enable_read(iic_id,
-                                       (unsigned char *) &gRead_buf[iic_id],
-                                       I2CCOMM_MAX_RBUF_SIZE);
+            /* Unknown feature — nothing to do. HW is already re-armed
+             * (in ISR after the FIFO enqueue), so we just drop the
+             * frame and continue. */
             break;
     }
 }
@@ -268,11 +276,12 @@ uint8_t evt_i2ccomm_0_rx_cb(void)
 {
     while (s_rx_tail[USE_DW_IIC_SLV_0] != s_rx_head[USE_DW_IIC_SLV_0]) {
         uint32_t t = s_rx_tail[USE_DW_IIC_SLV_0];
-        memcpy((void *)gRead_buf[USE_DW_IIC_SLV_0],
-               s_rx_fifo[USE_DW_IIC_SLV_0][t % EVT_I2CCOMM_RX_FIFO_SLOTS],
-               I2CCOMM_MAX_RBUF_SIZE);
         __DMB();
-        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_0);
+        /* Dispatch reads directly from the FIFO slot. gRead_buf is the
+         * HW landing zone and may be concurrently overwritten by HW —
+         * we never read or write it from the consumer side. */
+        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_0,
+            s_rx_fifo[USE_DW_IIC_SLV_0][t % EVT_I2CCOMM_RX_FIFO_SLOTS]);
         s_rx_tail[USE_DW_IIC_SLV_0] = t + 1;
     }
     return HX_EVENT_RETURN_DONE;
@@ -300,41 +309,39 @@ uint8_t evt_i2ccomm_1_rx_cb(void)
 {
     while (s_rx_tail[USE_DW_IIC_SLV_1] != s_rx_head[USE_DW_IIC_SLV_1]) {
         uint32_t t = s_rx_tail[USE_DW_IIC_SLV_1];
-        memcpy((void *)gRead_buf[USE_DW_IIC_SLV_1],
-               s_rx_fifo[USE_DW_IIC_SLV_1][t % EVT_I2CCOMM_RX_FIFO_SLOTS],
-               I2CCOMM_MAX_RBUF_SIZE);
         __DMB();
-        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1);
+        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1,
+            s_rx_fifo[USE_DW_IIC_SLV_1][t % EVT_I2CCOMM_RX_FIFO_SLOTS]);
         s_rx_tail[USE_DW_IIC_SLV_1] = t + 1;
     }
     return HX_EVENT_RETURN_DONE;
 }
 
 // Command process for FEATURE:SYSTEM_INFO
-static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id)
+static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id, const uint8_t *frame)
 {
     int retval = 0;
     unsigned int data;
     unsigned char cmd;
     unsigned short checksum;
 
-    retval = hx_lib_i2ccomm_validate_checksum((unsigned char *) &gRead_buf[iic_id]);
+    /* Validate against the FIFO frame copy, not gRead_buf — gRead_buf
+     * may already hold a newer HW-arrival. */
+    retval = hx_lib_i2ccomm_validate_checksum((unsigned char *)frame);
     if (retval != I2CCOMM_NO_ERROR)
     {
         dbg_evt_iics_cmd("%s - checksum validation : FAIL\n", __FUNCTION__);
-        prv_evt_i2ccomm_clear_read_buf_header(iic_id);
-        hx_lib_i2ccomm_enable_read(iic_id, (unsigned char *) &gRead_buf[iic_id], I2CCOMM_MAX_RBUF_SIZE);
         return;
     }
 
-    cmd = gRead_buf[iic_id][I2CFMT_COMMAND_OFFSET];
+    cmd = frame[I2CFMT_COMMAND_OFFSET];
     dbg_evt_iics_cmd("%s(iic_id:%d, cmd:0x%02x) \n", __FUNCTION__, iic_id, cmd);
 
     switch (cmd)
     {
         case I2CCOMM_CMD_SYS_GET_VER_BSP:
             // prepare write buffer for write process
-            gWrite_buf[iic_id][I2CFMT_FEATURE_OFFSET] = gRead_buf[iic_id][I2CFMT_FEATURE_OFFSET];
+            gWrite_buf[iic_id][I2CFMT_FEATURE_OFFSET] = frame[I2CFMT_FEATURE_OFFSET];
             gWrite_buf[iic_id][I2CFMT_COMMAND_OFFSET] = I2CCOMM_CMD_SYS_GET_VER_BSP;
             gWrite_buf[iic_id][I2CFMT_PAYLOADLEN_MSB_OFFSET] = (I2CCOMM_SYS_CMD_PAYLOAD_VER_BSP >> 8) & 0xFF;
             gWrite_buf[iic_id][I2CFMT_PAYLOADLEN_LSB_OFFSET] = I2CCOMM_SYS_CMD_PAYLOAD_VER_BSP & 0xFF;
@@ -366,7 +373,7 @@ static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id)
 
         case I2CCOMM_CMD_SYS_GET_VER_I2C:
             // prepare write buffer for write process
-            gWrite_buf[iic_id][I2CFMT_FEATURE_OFFSET] = gRead_buf[iic_id][I2CFMT_FEATURE_OFFSET];
+            gWrite_buf[iic_id][I2CFMT_FEATURE_OFFSET] = frame[I2CFMT_FEATURE_OFFSET];
             gWrite_buf[iic_id][I2CFMT_COMMAND_OFFSET] = I2CCOMM_CMD_SYS_GET_VER_I2C;
             gWrite_buf[iic_id][I2CFMT_PAYLOADLEN_MSB_OFFSET] = (I2CCOMM_SYS_CMD_PAYLOAD_VER_I2C >> 8) & 0xFF;
             gWrite_buf[iic_id][I2CFMT_PAYLOADLEN_LSB_OFFSET] = I2CCOMM_SYS_CMD_PAYLOAD_VER_I2C & 0xFF;
@@ -396,11 +403,7 @@ static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id)
             break;
 
         default:
-            /* only get command without write data or information to external I2C master 
-               or
-               undefine command */
-            prv_evt_i2ccomm_clear_read_buf_header(iic_id);
-            hx_lib_i2ccomm_enable_read(iic_id, (unsigned char *) &gRead_buf[iic_id], I2CCOMM_MAX_RBUF_SIZE);
+            /* unknown sysinfo cmd — HW already re-armed in ISR. */
             break;
     }
 }

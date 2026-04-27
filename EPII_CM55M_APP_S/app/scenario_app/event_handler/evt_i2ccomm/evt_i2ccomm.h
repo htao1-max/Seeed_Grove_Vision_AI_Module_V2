@@ -22,7 +22,11 @@
 /****************************************************
  * Type Definition                                 *
  ***************************************************/
-typedef void (*i2ccomm_customer)(void);
+/* Receives a pointer to the frame bytes (FIFO slot). The handler MUST
+ * NOT re-arm the I2C HW — that is now done in ISR context after enqueue.
+ * The handler MUST treat the buffer as transient; copy out anything that
+ * needs to outlive the call. */
+typedef void (*i2ccomm_customer)(const uint8_t *frame);
 
 /****************************************************
  * Constant Definition                              *

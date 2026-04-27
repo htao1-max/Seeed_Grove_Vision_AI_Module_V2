@@ -13,34 +13,32 @@
 volatile uint8_t g_recording_active  = 0;
 volatile float   g_detect_threshold  = DETECT_CONF_THRESHOLD;
 
-/* Buffers shared with evt_i2ccomm.c */
-extern unsigned char gRead_buf[DW_IIC_S_NUM][I2CCOMM_MAX_RBUF_SIZE];
-extern unsigned char gWrite_buf[DW_IIC_S_NUM][I2CCOMM_MAX_WBUF_SIZE];
-
 /* -----------------------------------------------------------------------
  * i2c_customer_handler — called by evt_i2ccomm when feature is in
- * I2CCOMM_FEATURE_CUSTOMER_MIN..MAX range.
+ * I2CCOMM_FEATURE_CUSTOMER_MIN..MAX range. Receives a pointer to the
+ * frame bytes (a FIFO slot owned by evt_i2ccomm). Must NOT re-arm the
+ * I2C HW — that is now done in ISR context immediately after enqueue.
  * -------------------------------------------------------------------- */
-static void i2c_customer_handler(void)
+static void i2c_customer_handler(const uint8_t *frame)
 {
     int retval;
-    unsigned char feature = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_FEATURE_OFFSET];
-    unsigned char cmd     = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_COMMAND_OFFSET];
+    unsigned char feature = frame[I2CFMT_FEATURE_OFFSET];
+    unsigned char cmd     = frame[I2CFMT_COMMAND_OFFSET];
 
     /* Dump raw received bytes for debugging */
     {
-        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
-                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+        uint16_t plen = ((uint16_t)frame[I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)frame[I2CFMT_PAYLOADLEN_LSB_OFFSET];
         uint16_t dump_len = 4 + plen + 2;  /* header + payload + crc */
         if (dump_len > 16) dump_len = 16;
         xprintf("[I2C_CMD] raw %u bytes:", dump_len);
         for (uint16_t i = 0; i < dump_len; i++)
-            xprintf(" %02x", gRead_buf[USE_DW_IIC_SLV_0][i]);
+            xprintf(" %02x", frame[i]);
         xprintf("\r\n");
     }
 
     /* Validate checksum */
-    retval = hx_lib_i2ccomm_validate_checksum((unsigned char *)&gRead_buf[USE_DW_IIC_SLV_0]);
+    retval = hx_lib_i2ccomm_validate_checksum((unsigned char *)frame);
     if (retval != I2CCOMM_NO_ERROR) {
         xprintf("[I2C_CMD] checksum error (retval=%d), skipping check for debug\r\n", retval);
         /* Continue anyway for debugging — remove this bypass once CRC is fixed */
@@ -48,11 +46,11 @@ static void i2c_customer_handler(void)
 
     if (feature == I2C_FEATURE_RECORDER && cmd == I2C_CMD_RECORD_START) {
         /* Read optional threshold override from payload byte 0 */
-        uint16_t payload_len = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
-                             |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+        uint16_t payload_len = ((uint16_t)frame[I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                             |  (uint16_t)frame[I2CFMT_PAYLOADLEN_LSB_OFFSET];
 
         if (payload_len >= 1) {
-            uint8_t raw = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
+            uint8_t raw = frame[I2CFMT_PAYLOAD_OFFSET];
             if (raw <= 100) {
                 g_detect_threshold = (float)raw / 100.0f;
             }
@@ -66,13 +64,13 @@ static void i2c_customer_handler(void)
         xprintf("****************************************************\r\n");
         sdlog_write("[I2C] Recording started (threshold=%.2f)\r\n", g_detect_threshold);
     } else if (feature == I2C_FEATURE_LOG && cmd == I2C_CMD_LOG_WRITE) {
-        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
-                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+        uint16_t plen = ((uint16_t)frame[I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)frame[I2CFMT_PAYLOADLEN_LSB_OFFSET];
 
         if (plen < 2 || plen > I2CCOMM_MAX_PAYLOAD_SIZE) {
             xprintf("[I2C_LOG] bad plen=%u\r\n", (unsigned)plen);
         } else {
-            const char *buf = (const char *)&gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
+            const char *buf = (const char *)&frame[I2CFMT_PAYLOAD_OFFSET];
             size_t tag_len = strnlen(buf, 16);
             if (tag_len >= 16 || (tag_len + 1) >= plen) {
                 xprintf("[I2C_LOG] malformed payload (tag_len=%u, plen=%u)\r\n",
@@ -96,14 +94,14 @@ static void i2c_customer_handler(void)
             }
         }
     } else if (feature == I2C_FEATURE_TLM && cmd == I2C_CMD_TLM_WRITE) {
-        uint16_t plen = ((uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
-                      |  (uint16_t)gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOADLEN_LSB_OFFSET];
+        uint16_t plen = ((uint16_t)frame[I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
+                      |  (uint16_t)frame[I2CFMT_PAYLOADLEN_LSB_OFFSET];
 
         if (plen == 0 || plen > I2CCOMM_MAX_PAYLOAD_SIZE
             || (plen % TLM_SAMPLE_BYTES) != 0) {
             xprintf("[I2C_TLM] bad plen=%u\r\n", (unsigned)plen);
         } else {
-            const uint8_t *payload = (const uint8_t *)&gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_PAYLOAD_OFFSET];
+            const uint8_t *payload = &frame[I2CFMT_PAYLOAD_OFFSET];
             sdlog_tlm_enqueue(payload, plen);
             xprintf("[I2C_TLM] enqueued %u bytes (%u samples)\r\n",
                     (unsigned)plen, (unsigned)(plen / TLM_SAMPLE_BYTES));
@@ -112,11 +110,9 @@ static void i2c_customer_handler(void)
         xprintf("[I2C_CMD] Unknown customer cmd: feature=0x%02x cmd=0x%02x\r\n", feature, cmd);
     }
 
-    /* Re-arm read for next command */
-    memset((void *)&gRead_buf[USE_DW_IIC_SLV_0], 0xFF, 4);
-    hx_lib_i2ccomm_enable_read(USE_DW_IIC_SLV_0,
-                               (unsigned char *)&gRead_buf[USE_DW_IIC_SLV_0],
-                               I2CCOMM_MAX_RBUF_SIZE);
+    /* No re-arm here — evt_i2ccomm.c re-arms HW from the ISR after
+     * enqueueing into the FIFO. Re-arming here would race the next
+     * iteration's drain. */
 }
 
 /* -----------------------------------------------------------------------
