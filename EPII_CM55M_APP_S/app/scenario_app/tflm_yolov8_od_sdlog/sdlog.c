@@ -354,7 +354,7 @@ void sdlog_log_drain(void)
  *           head advance.
  * Consumer: sdlog_tlm_drain(), called once per scenario loop iteration.
  * -------------------------------------------------------------------- */
-#define SDLOG_TLM_RING_SLOTS  4
+#define SDLOG_TLM_RING_SLOTS  16
 #define SDLOG_TLM_BLOB_MAX    (4U * 64U)  /* TLM_BATCH_SIZE * TLM_SAMPLE_BYTES */
 
 typedef struct {

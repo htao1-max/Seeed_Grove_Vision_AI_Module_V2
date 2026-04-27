@@ -28,6 +28,7 @@
 #include "board.h"
 #include "xprintf.h"
 #include "tflm_yolov8_od_sdlog.h"
+#include "evt_i2ccomm.h"
 #include "WE2_core.h"
 #include "hx_drv_scu.h"
 #include "hx_drv_swreg_aon.h"
@@ -545,6 +546,21 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
          * the main scenario thread — single writer to session.log. */
         sdlog_log_drain();
         sdlog_tlm_drain();
+
+        /* Surface I2C mailbox FIFO drops on change. Bumping means the
+         * worst-case scenario-loop stall exceeded the 16-slot mailbox
+         * depth — bump EVT_I2CCOMM_RX_FIFO_SLOTS and/or
+         * SDLOG_TLM_RING_SLOTS. Pattern matches sdlog.c's
+         * g_tlm_dropped print-on-change. */
+        {
+            static uint32_t s_last_iic_dropped = 0;
+            uint32_t cur = evt_i2ccomm_get_rx_dropped(USE_DW_IIC_SLV_0);
+            if (cur != s_last_iic_dropped) {
+                xprintf("[I2CCOMM] dropped %lu rx frames (mailbox FIFO full)\r\n",
+                        (unsigned long)cur);
+                s_last_iic_dropped = cur;
+            }
+        }
 
         /* Clear algo results for next frame */
         for (int i = 0; i < MAX_TRACKED_YOLOV8_ALGO_RES; ++i) {
