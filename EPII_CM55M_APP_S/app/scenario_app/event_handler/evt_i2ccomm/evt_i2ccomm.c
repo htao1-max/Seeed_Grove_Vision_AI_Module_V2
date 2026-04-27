@@ -160,14 +160,35 @@ static void i2cs_cb_rx(void *param)
 {
     HX_DRV_DEV_IIC *iic_obj = param;
     HX_DRV_DEV_IIC_INFO *iic_info_ptr = &(iic_obj->iic_info);
+    USE_DW_IIC_SLV_E id;
+    int evt_idx;
 
-    if(iic_info_ptr->slv_addr == EVT_I2CS_0_SLV_ADDR){
+    if (iic_info_ptr->slv_addr == EVT_I2CS_0_SLV_ADDR) {
         dbg_evt_iics_cb("%s(iic_id:0) \n", __FUNCTION__);
-        hx_event_activate_ISR(g_event[EVT_INDEX_I2CS_0_RX]);
-    }else if(iic_info_ptr->slv_addr == EVT_I2CS_1_SLV_ADDR){
+        id = USE_DW_IIC_SLV_0;
+        evt_idx = EVT_INDEX_I2CS_0_RX;
+    } else if (iic_info_ptr->slv_addr == EVT_I2CS_1_SLV_ADDR) {
         dbg_evt_iics_cb("%s(iic_id:1) \n", __FUNCTION__);
-        hx_event_activate_ISR(g_event[EVT_INDEX_I2CS_1_RX]);
+        id = USE_DW_IIC_SLV_1;
+        evt_idx = EVT_INDEX_I2CS_1_RX;
+    } else {
+        return;
     }
+
+    /* Enqueue the just-received frame into the SPSC FIFO. ISR is the
+     * sole producer; main loop is the sole consumer. */
+    uint32_t head = s_rx_head[id];
+    uint32_t tail = s_rx_tail[id];
+    if ((head - tail) < EVT_I2CCOMM_RX_FIFO_SLOTS) {
+        memcpy(s_rx_fifo[id][head % EVT_I2CCOMM_RX_FIFO_SLOTS],
+               (const void *)gRead_buf[id], I2CCOMM_MAX_RBUF_SIZE);
+        __DMB();
+        s_rx_head[id] = head + 1;
+    } else {
+        s_rx_dropped[id]++;
+    }
+
+    hx_event_activate_ISR(g_event[evt_idx]);
 }
 
 static void i2cs_cb_err(void *param)
@@ -245,7 +266,15 @@ static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
 
 uint8_t evt_i2ccomm_0_rx_cb(void)
 {
-    prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_0);
+    while (s_rx_tail[USE_DW_IIC_SLV_0] != s_rx_head[USE_DW_IIC_SLV_0]) {
+        uint32_t t = s_rx_tail[USE_DW_IIC_SLV_0];
+        memcpy((void *)gRead_buf[USE_DW_IIC_SLV_0],
+               s_rx_fifo[USE_DW_IIC_SLV_0][t % EVT_I2CCOMM_RX_FIFO_SLOTS],
+               I2CCOMM_MAX_RBUF_SIZE);
+        __DMB();
+        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_0);
+        s_rx_tail[USE_DW_IIC_SLV_0] = t + 1;
+    }
     return HX_EVENT_RETURN_DONE;
 }
 
@@ -269,7 +298,15 @@ uint8_t evt_i2ccomm_1_err_cb(void)
 
 uint8_t evt_i2ccomm_1_rx_cb(void)
 {
-    prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1);
+    while (s_rx_tail[USE_DW_IIC_SLV_1] != s_rx_head[USE_DW_IIC_SLV_1]) {
+        uint32_t t = s_rx_tail[USE_DW_IIC_SLV_1];
+        memcpy((void *)gRead_buf[USE_DW_IIC_SLV_1],
+               s_rx_fifo[USE_DW_IIC_SLV_1][t % EVT_I2CCOMM_RX_FIFO_SLOTS],
+               I2CCOMM_MAX_RBUF_SIZE);
+        __DMB();
+        prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1);
+        s_rx_tail[USE_DW_IIC_SLV_1] = t + 1;
+    }
     return HX_EVENT_RETURN_DONE;
 }
 
