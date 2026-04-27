@@ -74,6 +74,7 @@ static void i2cs_cb_rx(void *param);
 static void i2cs_cb_err(void *param);
 
 static void evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_E iic_id);
+static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id);
 static i2ccomm_customer i2ccomm_cmd_customer_process[DW_IIC_S_NUM] = {NULL, NULL};
 
 /****************************************************
@@ -201,40 +202,50 @@ uint8_t evt_i2ccomm_0_err_cb(void)
     return HX_EVENT_RETURN_DONE;
 }
 
-uint8_t evt_i2ccomm_0_rx_cb(void)
+static void prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_E iic_id)
 {
-    unsigned char feature = gRead_buf[USE_DW_IIC_SLV_0][I2CFMT_FEATURE_OFFSET];
+    unsigned char feature = gRead_buf[iic_id][I2CFMT_FEATURE_OFFSET];
     dbg_evt_iics_cmd("\n");
-    dbg_evt_iics_cmd("%s(feature:0x%02x) \n", __FUNCTION__, feature);
-    funcptr_void ResetHandler;
-    
+    dbg_evt_iics_cmd("%s(iic_id:%d, feature:0x%02x) \n",
+                     __FUNCTION__, (int)iic_id, feature);
+
     switch (feature)
     {
         case I2CCOMM_FEATURE_SYS:
-            evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_0);
-            prv_evt_i2ccomm_clear_read_buf_header(USE_DW_IIC_SLV_0);
+            evt_i2cs_cmd_process_sysinfo(iic_id);
+            prv_evt_i2ccomm_clear_read_buf_header(iic_id);
             break;
 
         case I2CCOMM_FEATURE_OTA_RESERVED:
-            /* jump to 2ndloader */
-            dbg_evt_iics_cmd("Into 2ndloader upgrade:\n");
-            hx_drv_swreg_aon_set_ota_flag(SWREG_AON_OTA_YES_FLAG);
-            setPS_PDNoVid();
+            /* jump to 2ndloader — only meaningful on iic_id 0 */
+            if (iic_id == USE_DW_IIC_SLV_0) {
+                dbg_evt_iics_cmd("Into 2ndloader upgrade:\n");
+                hx_drv_swreg_aon_set_ota_flag(SWREG_AON_OTA_YES_FLAG);
+                setPS_PDNoVid();
+            }
             break;
 
         case I2CCOMM_FEATURE_CUSTOMER_MIN ... I2CCOMM_FEATURE_CUSTOMER_MAX:
-            i2ccomm_cmd_customer_process[USE_DW_IIC_SLV_0]();
+            if (i2ccomm_cmd_customer_process[iic_id] != NULL) {
+                i2ccomm_cmd_customer_process[iic_id]();
+            }
             break;
-        
+
         case I2CCOMM_FEATURE_MAX:
             break;
 
         default:
-            prv_evt_i2ccomm_clear_read_buf_header(USE_DW_IIC_SLV_0);
-            hx_lib_i2ccomm_enable_read(USE_DW_IIC_SLV_0, (unsigned char *) &gRead_buf[USE_DW_IIC_SLV_0], I2CCOMM_MAX_RBUF_SIZE);
+            prv_evt_i2ccomm_clear_read_buf_header(iic_id);
+            hx_lib_i2ccomm_enable_read(iic_id,
+                                       (unsigned char *) &gRead_buf[iic_id],
+                                       I2CCOMM_MAX_RBUF_SIZE);
             break;
     }
+}
 
+uint8_t evt_i2ccomm_0_rx_cb(void)
+{
+    prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_0);
     return HX_EVENT_RETURN_DONE;
 }
 
@@ -258,31 +269,7 @@ uint8_t evt_i2ccomm_1_err_cb(void)
 
 uint8_t evt_i2ccomm_1_rx_cb(void)
 {
-    unsigned char feature = gRead_buf[USE_DW_IIC_SLV_1][I2CFMT_FEATURE_OFFSET];
-    dbg_evt_iics_cmd("\n");
-    dbg_evt_iics_cmd("%s(feature:0x%02x) \n", __FUNCTION__, feature);
-
-    switch (feature)
-    {
-        case I2CCOMM_FEATURE_SYS:
-            evt_i2cs_cmd_process_sysinfo(USE_DW_IIC_SLV_1);
-            prv_evt_i2ccomm_clear_read_buf_header(USE_DW_IIC_SLV_1);
-            break;
-
-        case I2CCOMM_FEATURE_CUSTOMER_MIN ... I2CCOMM_FEATURE_CUSTOMER_MAX:
-            i2ccomm_cmd_customer_process[USE_DW_IIC_SLV_1]();
-            break;
-
-        case I2CCOMM_FEATURE_MAX:
-            break;
-
-        default:
-            /* undefine feature code */
-            prv_evt_i2ccomm_clear_read_buf_header(USE_DW_IIC_SLV_1);
-            hx_lib_i2ccomm_enable_read(USE_DW_IIC_SLV_1, (unsigned char *) &gRead_buf[USE_DW_IIC_SLV_1], I2CCOMM_MAX_RBUF_SIZE);
-            break;
-    }
-
+    prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1);
     return HX_EVENT_RETURN_DONE;
 }
 
