@@ -25,22 +25,30 @@ static void i2c_customer_handler(const uint8_t *frame)
     unsigned char feature = frame[I2CFMT_FEATURE_OFFSET];
     unsigned char cmd     = frame[I2CFMT_COMMAND_OFFSET];
 
-    /* Dump raw received bytes for debugging */
+#ifdef I2C_CMD_VERBOSE_DEBUG
+    /* Dump raw received bytes for debugging. Off by default — at
+     * 30 Hz × 4-batch the drain loop bursts up to 16 frames at once,
+     * and ~50 chars/frame of UART output at 115200 baud blocks the
+     * scenario loop long enough to starve JPEG recording. */
     {
         uint16_t plen = ((uint16_t)frame[I2CFMT_PAYLOADLEN_MSB_OFFSET] << 8)
                       |  (uint16_t)frame[I2CFMT_PAYLOADLEN_LSB_OFFSET];
-        uint16_t dump_len = 4 + plen + 2;  /* header + payload + crc */
+        uint16_t dump_len = 4 + plen + 2;
         if (dump_len > 16) dump_len = 16;
         xprintf("[I2C_CMD] raw %u bytes:", dump_len);
         for (uint16_t i = 0; i < dump_len; i++)
             xprintf(" %02x", frame[i]);
         xprintf("\r\n");
     }
+#endif
 
-    /* Validate checksum */
+    /* Validate checksum (silent on common-case failure to keep the
+     * drain hot path short). */
     retval = hx_lib_i2ccomm_validate_checksum((unsigned char *)frame);
     if (retval != I2CCOMM_NO_ERROR) {
+#ifdef I2C_CMD_VERBOSE_DEBUG
         xprintf("[I2C_CMD] checksum error (retval=%d), skipping check for debug\r\n", retval);
+#endif
         /* Continue anyway for debugging — remove this bypass once CRC is fixed */
     }
 
@@ -89,7 +97,9 @@ static void i2c_customer_handler(const uint8_t *frame)
                      * f_write here would race the scenario-loop JPEG saves on
                      * the shared FatFs/SPI bus. */
                     sdlog_log_enqueue(tag, msg);
+#ifdef I2C_CMD_VERBOSE_DEBUG
                     xprintf("[I2C_LOG] [%s] %s\r\n", tag, msg);
+#endif
                 }
             }
         }
@@ -103,8 +113,10 @@ static void i2c_customer_handler(const uint8_t *frame)
         } else {
             const uint8_t *payload = &frame[I2CFMT_PAYLOAD_OFFSET];
             sdlog_tlm_enqueue(payload, plen);
+#ifdef I2C_CMD_VERBOSE_DEBUG
             xprintf("[I2C_TLM] enqueued %u bytes (%u samples)\r\n",
                     (unsigned)plen, (unsigned)(plen / TLM_SAMPLE_BYTES));
+#endif
         }
     } else {
         xprintf("[I2C_CMD] Unknown customer cmd: feature=0x%02x cmd=0x%02x\r\n", feature, cmd);

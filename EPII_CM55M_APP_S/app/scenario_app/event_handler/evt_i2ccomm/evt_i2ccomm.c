@@ -31,8 +31,11 @@
 
 #include "powermode.h"
 
-#define DBG_EVT_IICS_CMD_LOG             (1)
-#define DBG_EVT_IICS_CALLBACK_LOG        (1)
+/* Both default OFF — at 30 Hz telemetry × 16-frame drain bursts these
+ * blow out the UART (115200 baud) and starve the scenario loop, which
+ * stops JPEG recording. Flip to 1 only for short debug runs. */
+#define DBG_EVT_IICS_CMD_LOG             (0)
+#define DBG_EVT_IICS_CALLBACK_LOG        (0)
 
 #if DBG_EVT_IICS_CMD_LOG
     #define dbg_evt_iics_cmd(fmt, ...)   xprintf(fmt, ##__VA_ARGS__)
@@ -97,6 +100,13 @@ static uint8_t  s_rx_fifo[DW_IIC_S_NUM]
 static volatile uint32_t s_rx_head[DW_IIC_S_NUM];
 static volatile uint32_t s_rx_tail[DW_IIC_S_NUM];
 static volatile uint32_t s_rx_dropped[DW_IIC_S_NUM];
+
+/* Event-activation guard. The hxevent library prints "ACTIVATE ISR EVENT
+ * FAIL" (and may drop the activation) if hx_event_activate_ISR is called
+ * while the event is already queued. Since our FIFO can absorb back-to-
+ * back frames, the ISR must NOT re-activate when an activation is still
+ * outstanding — the handler will drain everything when it runs. */
+static volatile uint8_t s_rx_evt_pending[DW_IIC_S_NUM];
 
 I2CCOMM_CFG_T gI2CCOMM_cfg[DW_IIC_S_NUM] = {
     {   
@@ -192,13 +202,17 @@ static void i2cs_cb_rx(void *param)
      * gRead_buf even while the main loop is busy draining the FIFO.
      * This is what makes Approach A correct: the consumer never reads
      * or writes gRead_buf, so HW writing it concurrently with drain
-     * cannot corrupt anything. The previous design re-armed inside
-     * the scenario callback, which raced against the next iteration's
-     * memcpy(fifo[t] -> gRead_buf). */
+     * cannot corrupt anything. */
     hx_lib_i2ccomm_enable_read(id, (unsigned char *)&gRead_buf[id],
                                I2CCOMM_MAX_RBUF_SIZE);
 
-    hx_event_activate_ISR(g_event[evt_idx]);
+    /* Gate the event activation: if one is already pending, the handler
+     * will drain everything we just enqueued when it runs. */
+    if (s_rx_evt_pending[id] == 0) {
+        s_rx_evt_pending[id] = 1;
+        __DMB();
+        hx_event_activate_ISR(g_event[evt_idx]);
+    }
 }
 
 static void i2cs_cb_err(void *param)
@@ -284,6 +298,19 @@ uint8_t evt_i2ccomm_0_rx_cb(void)
             s_rx_fifo[USE_DW_IIC_SLV_0][t % EVT_I2CCOMM_RX_FIFO_SLOTS]);
         s_rx_tail[USE_DW_IIC_SLV_0] = t + 1;
     }
+
+    /* Clear pending and re-check FIFO. If an ISR fired between the
+     * end of the drain and the clear, the new frame is already in the
+     * FIFO but its activation was suppressed by the pending guard.
+     * Re-trigger so we don't strand it. */
+    s_rx_evt_pending[USE_DW_IIC_SLV_0] = 0;
+    __DMB();
+    if (s_rx_tail[USE_DW_IIC_SLV_0] != s_rx_head[USE_DW_IIC_SLV_0]
+        && s_rx_evt_pending[USE_DW_IIC_SLV_0] == 0) {
+        s_rx_evt_pending[USE_DW_IIC_SLV_0] = 1;
+        __DMB();
+        hx_event_activate_ISR(g_event[EVT_INDEX_I2CS_0_RX]);
+    }
     return HX_EVENT_RETURN_DONE;
 }
 
@@ -313,6 +340,15 @@ uint8_t evt_i2ccomm_1_rx_cb(void)
         prv_evt_i2ccomm_dispatch_one(USE_DW_IIC_SLV_1,
             s_rx_fifo[USE_DW_IIC_SLV_1][t % EVT_I2CCOMM_RX_FIFO_SLOTS]);
         s_rx_tail[USE_DW_IIC_SLV_1] = t + 1;
+    }
+
+    s_rx_evt_pending[USE_DW_IIC_SLV_1] = 0;
+    __DMB();
+    if (s_rx_tail[USE_DW_IIC_SLV_1] != s_rx_head[USE_DW_IIC_SLV_1]
+        && s_rx_evt_pending[USE_DW_IIC_SLV_1] == 0) {
+        s_rx_evt_pending[USE_DW_IIC_SLV_1] = 1;
+        __DMB();
+        hx_event_activate_ISR(g_event[EVT_INDEX_I2CS_1_RX]);
     }
     return HX_EVENT_RETURN_DONE;
 }
