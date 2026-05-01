@@ -504,10 +504,12 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
                 cvapp_get_result(i, &conf, &cls);
                 if (conf >= g_detect_threshold && !triggered)
                     triggered = 1;
+                /* newlib-nano strips %f; format conf via integer split */
+                unsigned conf_x100 = (unsigned)(conf * 100.0f + 0.5f);
                 /* Append every detection to annotation buffer */
                 annot_len += snprintf(annot + annot_len, sizeof(annot) - annot_len,
-                    "%u %.2f %lu %lu %lu %lu\n",
-                    (unsigned)cls, conf,
+                    "%u %u.%02u %lu %lu %lu %lu\n",
+                    (unsigned)cls, conf_x100 / 100, conf_x100 % 100,
                     algoresult_yolov8n_ob.obr[i].bbox.x,
                     algoresult_yolov8n_ob.obr[i].bbox.y,
                     algoresult_yolov8n_ob.obr[i].bbox.width,
@@ -530,8 +532,10 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
                     float conf;
                     uint16_t cls;
                     cvapp_get_result(i, &conf, &cls);
-                    sdlog_write("  obj[%d] class=%u conf=%.2f bbox=(%lu,%lu,%lu,%lu)\r\n",
-                                i, (unsigned)cls, conf,
+                    unsigned conf_x100 = (unsigned)(conf * 100.0f + 0.5f);
+                    sdlog_write("  obj[%d] class=%u conf=%u.%02u bbox=(%lu,%lu,%lu,%lu)\r\n",
+                                i, (unsigned)cls,
+                                conf_x100 / 100, conf_x100 % 100,
                                 algoresult_yolov8n_ob.obr[i].bbox.x,
                                 algoresult_yolov8n_ob.obr[i].bbox.y,
                                 algoresult_yolov8n_ob.obr[i].bbox.width,
