@@ -18,14 +18,20 @@ void sdlog_save_all(uint32_t addr, uint32_t sz, const char *fname);
 
 /**
  * sdlog_save_detect() — write JPEG from SRAM to SESSION_XXXX/DETECT/<fname>.
+ * Returns 1 on full success (open + write-all-bytes + close), 0 on any
+ * failure (SD not ready, addr/sz invalid, f_open / f_write / f_close error).
+ * Callers should gate the corresponding [DETECT] log line on this return so
+ * session.log entries match files actually present on disk.
  */
-void sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname);
+int sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname);
 
 /**
  * sdlog_save_detect_txt() — write a text annotation file to SESSION_XXXX/DETECT/<fname>.
  * Used to save YOLO bounding box results alongside detected images.
+ * Returns 1 on full success, 0 on any failure (same contract as
+ * sdlog_save_detect).
  */
-void sdlog_save_detect_txt(const char *fname, const char *content);
+int sdlog_save_detect_txt(const char *fname, const char *content);
 
 /**
  * sdlog_write() — printf-style append to SESSION_XXXX/session.log.

@@ -491,58 +491,94 @@ static void dp_app_cv_yolov8n_ob_eventhdl_cb(EVT_INDEX_E event)
             sdlog_save_all(jpeg_addr, jpeg_sz, fname);
             sdlog_write("[ALL] %s (frame %lu)\r\n", fname, g_frame_count);
 
-            /* 2. Save to DETECT/ if any object is above threshold */
-            int n = cvapp_get_result_count();
+            /* 2. Save to DETECT/ if any object is above threshold.
+             * Cap logged/written detections at DET_LOG_MAX. cvapp results
+             * are already NMS-sorted by descending confidence, so the
+             * first DET_LOG_MAX entries are the top-N. annot[] sized for
+             * DET_LOG_MAX lines at ~50 B/line worst case. */
+            #define DET_LOG_MAX 10
+            int n_total = cvapp_get_result_count();
+            int n = (n_total > DET_LOG_MAX) ? DET_LOG_MAX : n_total;
+            if (n_total > DET_LOG_MAX) {
+                xprintf("[SDLOG][ERR] frame %lu: %d detections exceeds cap %d; keeping top %d\r\n",
+                        g_frame_count, n_total, DET_LOG_MAX, DET_LOG_MAX);
+                sdlog_write("[ERR] frame %lu: %d detections > cap %d; kept top %d\r\n",
+                            g_frame_count, n_total, DET_LOG_MAX, DET_LOG_MAX);
+            }
             int triggered = 0;
-            char annot[512];
-            int annot_len = 0;
+            char annot[768];
+            size_t annot_len = 0;
 
-            /* First pass: build annotation buffer with all detections */
-            for (int i = 0; i < n; i++) {
+            /* Build annotation buffer with top-N detections (also flags
+             * `triggered` if any pass threshold). Must scan all n_total
+             * for the trigger so a low-conf top-1 doesn't suppress an
+             * above-threshold detection at index 11+. */
+            for (int i = 0; i < n_total; i++) {
                 float conf;
                 uint16_t cls;
                 cvapp_get_result(i, &conf, &cls);
                 if (conf >= g_detect_threshold && !triggered)
                     triggered = 1;
+                if (i >= n) continue;  /* over the top-N cap */
                 /* newlib-nano strips %f; format conf via integer split */
                 unsigned conf_x100 = (unsigned)(conf * 100.0f + 0.5f);
-                /* Append every detection to annotation buffer */
-                annot_len += snprintf(annot + annot_len, sizeof(annot) - annot_len,
+                int w = snprintf(annot + annot_len, sizeof(annot) - annot_len,
                     "%u %u.%02u %lu %lu %lu %lu\n",
                     (unsigned)cls, conf_x100 / 100, conf_x100 % 100,
                     algoresult_yolov8n_ob.obr[i].bbox.x,
                     algoresult_yolov8n_ob.obr[i].bbox.y,
                     algoresult_yolov8n_ob.obr[i].bbox.width,
                     algoresult_yolov8n_ob.obr[i].bbox.height);
+                if (w < 0) continue;
+                if ((size_t)w >= sizeof(annot) - annot_len)
+                    annot_len = sizeof(annot) - 1;
+                else
+                    annot_len += (size_t)w;
             }
 
-            /* If at least one detection exceeded threshold, save image + annotation */
+            /* If at least one detection exceeded threshold, save image + annotation.
+             *
+             * Gate [DETECT] log line + counter bump on jpeg save success so
+             * session.log entries always match files on disk. Order:
+             *   jpeg (durable on f_close) → txt (best-effort) → [DETECT] line
+             *   (f_sync'd) → counter++.
+             * On jpeg failure: emit [ERR_DETECT], do not bump counter (number
+             * is retried next time). On txt-only failure: emit [WARN_DETECT]
+             * but still emit [DETECT] and bump counter (jpeg is the source
+             * of truth for "this detection happened"). */
             if (triggered) {
                 xsprintf(fname, "det_%04lu.jpg", g_detect_count);
-                sdlog_save_detect(jpeg_addr, jpeg_sz, fname);
+                if (!sdlog_save_detect(jpeg_addr, jpeg_sz, fname)) {
+                    sdlog_write("[ERR_DETECT] frame %lu: jpeg save failed (would-be %s)\r\n",
+                                g_frame_count, fname);
+                } else {
+                    char txt_fname[48];
+                    xsprintf(txt_fname, "det_%04lu.txt", g_detect_count);
+                    if (!sdlog_save_detect_txt(txt_fname, annot)) {
+                        sdlog_write("[WARN_DETECT] frame %lu: txt save failed for %s (jpeg ok)\r\n",
+                                    g_frame_count, fname);
+                    }
 
-                char txt_fname[48];
-                xsprintf(txt_fname, "det_%04lu.txt", g_detect_count);
-                sdlog_save_detect_txt(txt_fname, annot);
-
-                /* Log all detections for this frame to session.log */
-                sdlog_write("[DETECT] %s (%d objects, frame %lu)\r\n",
-                            fname, n, g_frame_count);
-                for (int i = 0; i < n; i++) {
-                    float conf;
-                    uint16_t cls;
-                    cvapp_get_result(i, &conf, &cls);
-                    unsigned conf_x100 = (unsigned)(conf * 100.0f + 0.5f);
-                    sdlog_write("  obj[%d] class=%u conf=%u.%02u bbox=(%lu,%lu,%lu,%lu)\r\n",
-                                i, (unsigned)cls,
-                                conf_x100 / 100, conf_x100 % 100,
-                                algoresult_yolov8n_ob.obr[i].bbox.x,
-                                algoresult_yolov8n_ob.obr[i].bbox.y,
-                                algoresult_yolov8n_ob.obr[i].bbox.width,
-                                algoresult_yolov8n_ob.obr[i].bbox.height);
+                    /* Log top-N detections for this frame to session.log */
+                    sdlog_write("[DETECT] %s (%d objects, frame %lu)\r\n",
+                                fname, n, g_frame_count);
+                    for (int i = 0; i < n; i++) {
+                        float conf;
+                        uint16_t cls;
+                        cvapp_get_result(i, &conf, &cls);
+                        unsigned conf_x100 = (unsigned)(conf * 100.0f + 0.5f);
+                        sdlog_write("  obj[%d] class=%u conf=%u.%02u bbox=(%lu,%lu,%lu,%lu)\r\n",
+                                    i, (unsigned)cls,
+                                    conf_x100 / 100, conf_x100 % 100,
+                                    algoresult_yolov8n_ob.obr[i].bbox.x,
+                                    algoresult_yolov8n_ob.obr[i].bbox.y,
+                                    algoresult_yolov8n_ob.obr[i].bbox.width,
+                                    algoresult_yolov8n_ob.obr[i].bbox.height);
+                    }
+                    g_detect_count++;
                 }
-                g_detect_count++;
             }
+            #undef DET_LOG_MAX
             g_frame_count++;
         }
 

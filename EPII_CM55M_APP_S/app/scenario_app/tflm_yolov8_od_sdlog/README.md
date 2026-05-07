@@ -111,8 +111,8 @@ void i2c_cmd_init(void);                       /* register customer callback */
 ```c
 void sdlog_session_init(void);
 void sdlog_save_all   (uint32_t addr, uint32_t sz, const char *fname);
-void sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname);
-void sdlog_save_detect_txt(const char *fname, const char *content);
+int  sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname);    /* 1=ok, 0=fail */
+int  sdlog_save_detect_txt(const char *fname, const char *content);       /* 1=ok, 0=fail */
 void sdlog_write(const char *fmt, ...);        /* printf → session.log, f_sync each call */
 ```
 

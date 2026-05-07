@@ -57,30 +57,40 @@ void SSPI_CS_GPIO_Dir(bool setDirOut)
         hx_drv_gpio_set_input(GPIO16);
 }
 
-/* Write a JPEG from SRAM to the specified full path on the SD card */
-static void sdlog_write_image(uint32_t addr, uint32_t sz, const char *path)
+/* Write a JPEG from SRAM to the specified full path on the SD card.
+ * Returns 1 on full success (open + write-all-bytes + close), 0 otherwise. */
+static int sdlog_write_image(uint32_t addr, uint32_t sz, const char *path)
 {
     FIL fil;
     FRESULT res;
-    UINT bw;
+    UINT bw = 0;
 
     if (sz == 0 || addr == 0) {
         xprintf("[SDLOG] skip %s (addr=0x%x sz=%u)\r\n", path, addr, sz);
-        return;
+        return 0;
     }
 
     SCB_CleanInvalidateDCache_by_Addr((void *)addr, sz);
 
     res = f_open(&fil, path, FA_CREATE_ALWAYS | FA_WRITE);
-    if (res == FR_OK) {
-        res = f_write(&fil, (void *)addr, sz, &bw);
-        if (res != FR_OK) {
-            xprintf("[SDLOG] f_write(%s) res=%d bw=%u\r\n", path, res, bw);
-        }
-        f_close(&fil);
-    } else {
+    if (res != FR_OK) {
         xprintf("[SDLOG] f_open(%s) res=%d\r\n", path, res);
+        return 0;
     }
+
+    int ok = 1;
+    res = f_write(&fil, (void *)addr, sz, &bw);
+    if (res != FR_OK || bw != sz) {
+        xprintf("[SDLOG] f_write(%s) res=%d bw=%u/%u\r\n", path, res, bw, sz);
+        ok = 0;
+    }
+
+    FRESULT rc = f_close(&fil);
+    if (rc != FR_OK) {
+        xprintf("[SDLOG] f_close(%s) res=%d\r\n", path, rc);
+        ok = 0;
+    }
+    return ok;
 }
 
 /* -----------------------------------------------------------------------
@@ -211,35 +221,48 @@ void sdlog_save_all(uint32_t addr, uint32_t sz, const char *fname)
 }
 
 /* -----------------------------------------------------------------------
- * sdlog_save_detect
+ * sdlog_save_detect — returns 1 on success, 0 on any failure.
  * -------------------------------------------------------------------- */
-void sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname)
+int sdlog_save_detect(uint32_t addr, uint32_t sz, const char *fname)
 {
-    if (!g_sdlog_ready) return;
+    if (!g_sdlog_ready) return 0;
     char path[80];
     xsprintf(path, "%s/DETECT/%s", g_session_dir, fname);
-    sdlog_write_image(addr, sz, path);
+    return sdlog_write_image(addr, sz, path);
 }
 
 /* -----------------------------------------------------------------------
- * sdlog_save_detect_txt  (write annotation text file to DETECT/)
+ * sdlog_save_detect_txt — write annotation text file to DETECT/.
+ * Returns 1 on full success (open + write-all-bytes + close), 0 otherwise.
  * -------------------------------------------------------------------- */
-void sdlog_save_detect_txt(const char *fname, const char *content)
+int sdlog_save_detect_txt(const char *fname, const char *content)
 {
-    if (!g_sdlog_ready) return;
+    if (!g_sdlog_ready) return 0;
 
     char path[80];
     FIL fil;
-    UINT bw;
+    UINT bw = 0;
 
     xsprintf(path, "%s/DETECT/%s", g_session_dir, fname);
     FRESULT res = f_open(&fil, path, FA_CREATE_ALWAYS | FA_WRITE);
-    if (res == FR_OK) {
-        f_write(&fil, content, strlen(content), &bw);
-        f_close(&fil);
-    } else {
+    if (res != FR_OK) {
         xprintf("[SDLOG] f_open(%s) res=%d\r\n", path, res);
+        return 0;
     }
+
+    int ok = 1;
+    UINT len = (UINT)strlen(content);
+    res = f_write(&fil, content, len, &bw);
+    if (res != FR_OK || bw != len) {
+        xprintf("[SDLOG] f_write(%s) res=%d bw=%u/%u\r\n", path, res, bw, len);
+        ok = 0;
+    }
+    FRESULT rc = f_close(&fil);
+    if (rc != FR_OK) {
+        xprintf("[SDLOG] f_close(%s) res=%d\r\n", path, rc);
+        ok = 0;
+    }
+    return ok;
 }
 
 /* -----------------------------------------------------------------------
