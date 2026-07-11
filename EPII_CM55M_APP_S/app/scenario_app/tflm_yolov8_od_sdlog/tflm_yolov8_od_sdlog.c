@@ -574,6 +574,10 @@ void app_start_state(APP_STATE_E state)
         }
     }
 #endif
+
+    /* Mount SD AFTER sensor/datapath init so pin mux is stable */
+    sdlog_session_init();
+
     event_handler_init();
     cisdp_sensor_start();
     event_handler_start();
@@ -644,9 +648,6 @@ int tflm_yolov8_od_sdlog_app(void) {
 
     /* ---- Step 2: arm I2C slave callback (before events start) ---- */
     i2c_cmd_init();
-
-    /* ---- Step 3: mount SD BEFORE event loop (which never returns) ---- */
-    sdlog_session_init();
 
     if(g_use_case == 0) {
         xprintf("YOLOv8n object detection (sdlog)\n");
