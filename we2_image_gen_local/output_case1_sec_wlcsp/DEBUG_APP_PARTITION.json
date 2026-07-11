@@ -1,0 +1,107 @@
+{
+    "cm55m_s_application": {
+        "division_size": "0xf0000000",
+        "sec_header_size": "0x4AC",
+        "part_align": "0x0",
+        "part_1": {
+            "section_1": {
+                "type": 3,
+                "section_number": 1,
+                "sec_size": "0x7C0",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p1_s1.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x7c0",
+                "sec_type": 1,
+                "sec_dst": "0x10000000"
+            },
+            "section_count": 4,
+            "section_2": {
+                "type": 3,
+                "section_number": 2,
+                "sec_size": "0x287B4",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p1_s2.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x287b4",
+                "sec_type": 0,
+                "sec_dst": "0x100007c0"
+            },
+            "section_3": {
+                "type": 3,
+                "section_number": 3,
+                "sec_size": "0x66C0",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p1_s3.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x66c0",
+                "sec_type": 1,
+                "sec_dst": "0x30000000"
+            },
+            "section_4": {
+                "type": 3,
+                "section_number": 4,
+                "sec_size": "0x8",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p1_s4.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x8",
+                "sec_type": 1,
+                "sec_dst": "0x10028f74"
+            },
+            "output_sec": "/home/hengyutao/Documents/Seeed_Grove_Vision_AI_Module_V2/we2_image_gen_local/output_case1_sec_wlcsp/inter_files/sign_formal_cm55m_s_application_p1.img"
+        },
+        "part_2": {
+            "section_1": {
+                "type": 3,
+                "section_number": 1,
+                "sec_size": "0xC",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p2_s1.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0xc",
+                "sec_type": 2,
+                "sec_dst": "0x10028f7c"
+            },
+            "section_count": 3,
+            "section_2": {
+                "type": 3,
+                "section_number": 2,
+                "sec_size": "0x670",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p2_s2.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x670",
+                "sec_type": 2,
+                "sec_dst": "0x300066c0"
+            },
+            "section_3": {
+                "type": 3,
+                "section_number": 3,
+                "sec_size": "0x8",
+                "version": 2,
+                "output": "output_case1_sec_wlcsp/inter_files/cm55m_s_application_p2_s3.img",
+                "div_cnt": 1,
+                "align": 0,
+                "sec_offset": "0x0",
+                "div_sec_size": "0x8",
+                "sec_type": 2,
+                "sec_dst": "0x10028f88"
+            },
+            "output_sec": "/home/hengyutao/Documents/Seeed_Grove_Vision_AI_Module_V2/we2_image_gen_local/output_case1_sec_wlcsp/inter_files/sign_formal_cm55m_s_application_p2.img"
+        },
+        "part_count": 2
+    }
+}

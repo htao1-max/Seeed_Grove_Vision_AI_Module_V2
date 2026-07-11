@@ -32,10 +32,10 @@
 
 # Various build files
 EPII_CM55M_APP_S/obj_*/**
-we2_image_gen_local/output_*/**
+#we2_image_gen_local/output_*/**
 we2_image_gen_local/Images*.txt
 *.elf
 *.map
-*.img
+#*.img
 
 .vscode/
