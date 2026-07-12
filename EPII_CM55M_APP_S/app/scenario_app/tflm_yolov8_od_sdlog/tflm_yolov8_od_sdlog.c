@@ -743,6 +743,12 @@ int tflm_yolov8_od_sdlog_app(void) {
     sdlog_session_init();
     sdlog_tlm_init();
 
+#if SDLOG_TESTING_AUTO_RECORD
+    g_recording_active = 1;
+    xprintf("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
+    sdlog_write("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
+#endif
+
     if(g_use_case == 0) {
         xprintf("YOLOv8n object detection (sdlog)\n");
 #ifdef EN_ALGO

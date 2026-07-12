@@ -10,6 +10,11 @@
 /* Minimum confidence to save a copy in DETECT/ folder */
 #define DETECT_CONF_THRESHOLD   0.50f
 
+/* Testing mode: auto-starts SD recording at boot without waiting for the
+ * I2C "start recording" command. Set to 0 for real deployments where the
+ * host is expected to trigger recording. */
+#define SDLOG_TESTING_AUTO_RECORD   1
+
 //current FW image is 409600 bytes => 0x64000. set  0~0x171000 as FW area
 #define FW_IMG_SZ                           0x3A171000
 

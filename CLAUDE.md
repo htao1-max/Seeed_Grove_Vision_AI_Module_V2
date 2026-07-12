@@ -37,9 +37,9 @@ we2_local_image_gen project_case1_blp_wlcsp.json
 # Install dependencies once:
 pip install -r xmodem/requirements.txt
 
-# Flash firmware + model (Windows):
+# Flash firmware + model (Windows):9
 python xmodem\xmodem_send.py --port=COM4 --baudrate=921600 --protocol=xmodem 
-  --file=we2_image_gen_local\20260401img\output.img 
+  --file=we2_image_gen_local\output_case1_sec_wlcsp\output.img 
   --model="model_zoo\tflm_yolov8_od\yolov8n_od_192_delete_transpose_0xB7B000.tflite 0xB7B000 0x00000"
 
 # Flash firmware + model (Linux):
