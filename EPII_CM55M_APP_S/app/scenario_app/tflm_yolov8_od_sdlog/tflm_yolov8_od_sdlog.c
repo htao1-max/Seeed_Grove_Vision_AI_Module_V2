@@ -670,6 +670,22 @@ void app_start_state(APP_STATE_E state)
 #endif
     event_handler_init();
     cisdp_sensor_start();
+
+    /* Mount SD / open session log only after the camera is fully up and
+     * streaming. sdlog_session_init() remuxes PB2/PB3 from I2C_M (camera
+     * control bus) to SPI_M (SD card) — done here, after the last CIS
+     * register write (OV5647_stream_on in cisdp_sensor_start()), so the
+     * camera's I2C writes during init/start still reach the sensor. Must
+     * stay before event_handler_start(), which never returns. */
+    sdlog_session_init();
+    sdlog_tlm_init();
+
+#if SDLOG_TESTING_AUTO_RECORD
+    g_recording_active = 1;
+    xprintf("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
+    sdlog_write("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
+#endif
+
     event_handler_start();
 }
 
@@ -739,15 +755,11 @@ int tflm_yolov8_od_sdlog_app(void) {
     /* ---- Step 2: arm I2C slave callback (before events start) ---- */
     i2c_cmd_init();
 
-    /* ---- Step 3: mount SD BEFORE event loop (which never returns) ---- */
-    sdlog_session_init();
-    sdlog_tlm_init();
-
-#if SDLOG_TESTING_AUTO_RECORD
-    g_recording_active = 1;
-    xprintf("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
-    sdlog_write("[TESTING] Auto-start recording (SDLOG_TESTING_AUTO_RECORD=1)\r\n");
-#endif
+    /* ---- Step 3: SD mount happens inside app_start_state(), after the
+     * camera is initialized and streaming — see the comment there. It
+     * can't happen here because PB2/PB3 are shared between I2C_M (camera
+     * control) and SPI_M (SD card), and cisdp_sensor_init()/_start() need
+     * them as I2C_M. ---- */
 
     if(g_use_case == 0) {
         xprintf("YOLOv8n object detection (sdlog)\n");

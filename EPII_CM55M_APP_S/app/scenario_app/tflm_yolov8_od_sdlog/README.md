@@ -19,7 +19,7 @@ Paired with the STM32 trigger firmware in the `i2cScan` repo.
 | Per-frame save + per-detection `det_XXXX.txt` annotation | `tflm_yolov8_od_sdlog.c` (see `EVT_INDEX_XDMA_FRAME_READY` handler) |
 | Disabled `UART_SEND_ALOGO_RESEULT` (freed ~300 ms/frame of UART blocking) | `tflm_yolov8_od_sdlog.mk` |
 | D-cache clean+invalidate before SD writes (was invalidate-only — lost DMA data) | `sdlog.c :: sdlog_write_image()` |
-| Init order: `i2c_cmd_init → cv_yolov8n_ob_init → app_start_state → sdlog_session_init` (sensor init clobbered SPI pinmux otherwise) | `tflm_yolov8_od_sdlog.c` |
+| Init order: `i2c_cmd_init → cv_yolov8n_ob_init → app_start_state()'s sensor/datapath bring-up → sdlog_session_init` (`sdlog_session_init` is called *inside* `app_start_state()`, right before the never-returning `event_handler_start()`, because `PB2`/`PB3` are shared between camera I2C_M and SD SPI_M) | `tflm_yolov8_od_sdlog.c` |
 
 ## Boot flow
 
@@ -28,13 +28,24 @@ Paired with the STM32 trigger firmware in the `i2cScan` repo.
    `event_handler_init()` / `app_start_state()`.
 2. `cv_yolov8n_ob_init()` — load the YOLOv8n tflite model from flash
    (default addr `0x3AB7B000`, see `common_config.h`).
-3. `app_start_state()` — start sensor + datapath, begins firing frame events.
-4. `sdlog_session_init()` — configure SPI pinmux (PB2 MOSI, PB3 MISO,
-   PB4 SCLK, PB5 CS via GPIO16), mount FatFs, create the next
-   `SESSION_XXXX/ALL/` and `SESSION_XXXX/DETECT/`, open `session.log`.
+3. `app_start_state()` — brings up the sensor (`cisdp_sensor_init()` /
+   `cisdp_sensor_start()`) and datapath, **then**, still inside
+   `app_start_state()`, calls `sdlog_session_init()` — configure SPI pinmux
+   (PB2 MOSI, PB3 MISO, PB4 SCLK, PB5 CS via GPIO16), mount FatFs, create
+   the next `SESSION_XXXX/ALL/` and `SESSION_XXXX/DETECT/`, open
+   `session.log` — before finally calling `event_handler_start()` (which
+   never returns) to begin firing frame events.
 
-The order matters: the SPI pinmux must be applied **after** sensor init or
-it gets overwritten and SD writes silently fail.
+The order matters: `PB2`/`PB3` are shared pins — muxed to either `I2C_M`
+(camera control bus, used by `cisdp_sensor_init()`/`_start()` to program
+the OV5647) or `SPI_M` (SD card). `sdlog_session_init()` must run **after**
+the last CIS register write (`cisdp_sensor_start()`'s `OV5647_stream_on`)
+or the camera's I2C writes go out on pins now wired to the SD SPI bus and
+silently fail (`dw_iic_write err_code:-60`, `CIS Init fail`). It must also
+run **before** `event_handler_start()`, which never returns — so it can't
+simply be called from `tflm_yolov8_od_sdlog_app()` after `app_start_state()`
+returns, since it doesn't. That's why the call lives inside
+`app_start_state()` itself rather than in the top-level entry point.
 
 ## Runtime
 
